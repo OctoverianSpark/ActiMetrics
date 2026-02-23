@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="../Tracer.Data/Tracer.Data.csproj" Id="742ecc14-5517-481b-90b6-c0bcc0942b34" />
+  <Project Path="../Tracer.Shared/Tracer.Shared.csproj" Id="4813cd31-e890-4f94-84a8-2a2aea137cf7" />
   <Project Path="Tracer.Service.csproj" />
 </Solution>
