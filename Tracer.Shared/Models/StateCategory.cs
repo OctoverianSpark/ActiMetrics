@@ -6,6 +6,6 @@ namespace Tracer.Shared.Models
 {
     public enum StateCategory
     {
-         Active, Inactive
+         Active, Neutral, Inactive
     }
 }
