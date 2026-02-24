@@ -1,4 +1,6 @@
 
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Tracer.Service.Services;
 
 namespace Tracer.Service.Workers
