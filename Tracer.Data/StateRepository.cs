@@ -11,19 +11,20 @@ namespace Tracer.Data
         {
             _db = db;
         }
-
+         
         // Inserta un nuevo cambio de estado
-        public async Task LogStateAsync(string workerId, StateCategory category, WorkState state)
+        public async Task LogStateAsync(string workerId, StateCategory category, WorkState state,StateType type)
         {
             using var conn = _db.GetConnection();
             await conn.ExecuteAsync(@"
-                INSERT INTO StateLog (WorkerId, Category, State, Timestamp, Synced)
-                VALUES (@WorkerId, @Category, @State, @Timestamp, 0)",
+                INSERT INTO StateLog (WorkerId, Category, State,Type, Timestamp, Synced)
+                VALUES (@WorkerId, @Category, @State,@Type ,@Timestamp, 0)",
                 new
                 {
                     WorkerId = workerId,
                     Category = category.ToString(),
                     State = state.ToString(),
+                    Type = type.ToString(),
                     Timestamp = DateTime.Now.ToString("o")
                 });
         }
@@ -78,4 +79,4 @@ namespace Tracer.Data
             return total;
         }
     }
-}
+} 

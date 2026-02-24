@@ -23,6 +23,7 @@ namespace Tracer.Service.Services
             GetLastInputInfo(ref info);
 
             uint idleMs = (uint)Environment.TickCount - info.dwTime;
+            Console.WriteLine($"[Tracer] Time Idle: {idleMs}");
             return TimeSpan.FromMilliseconds(idleMs);
         }
 
