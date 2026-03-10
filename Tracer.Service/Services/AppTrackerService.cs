@@ -10,6 +10,7 @@ namespace Tracer.Service.Services
     {
         private readonly AppUsageRepository _repository;
         private readonly string _workerId;
+        private readonly string _workerUserName;
 
         private readonly Dictionary<string, double> _currentInterval = new();
         private DateTime _intervalStart = DateTime.Now;
@@ -26,6 +27,7 @@ namespace Tracer.Service.Services
         {
             _repository = repository;
             _workerId = Environment.MachineName;
+            _workerUserName = Environment.UserName;
         }
 
         // Llamado cada segundo desde ScreenWorker
@@ -75,7 +77,7 @@ namespace Tracer.Service.Services
 
                 var appsJson = JsonSerializer.Serialize(apps);
 
-                await _repository.LogIntervalAsync(_workerId, _intervalStart, now, appsJson);
+                await _repository.LogIntervalAsync(_workerId,_workerUserName, _intervalStart, now, appsJson);
 
                 Console.WriteLine($"[AppUsage] Intervalo {_intervalStart:HH:mm:ss} → {now:HH:mm:ss}");
                 foreach (var a in apps)

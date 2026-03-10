@@ -12,19 +12,21 @@ namespace Tracer.Data
             _db = db;
         }
 
-        public async Task LogIntervalAsync(string workerId, DateTime start, DateTime end, string appsJson)
+        public async Task LogIntervalAsync(string workerId, string workerUserName, DateTime start, DateTime end, string appsJson)
         {
             using var conn = _db.GetConnection();
             await conn.ExecuteAsync(@"
-                INSERT INTO AppUsageLog (WorkerId, IntervalStart, IntervalEnd, Apps, Synced)
-                VALUES (@WorkerId, @IntervalStart, @IntervalEnd, @Apps, 0)",
+                INSERT INTO AppUsageLog (WorkerId, WorkerUserName, IntervalStart, IntervalEnd, Apps, Synced)
+                VALUES (@WorkerId,@WorkerUserName, @IntervalStart, @IntervalEnd, @Apps, 0)",
                 new
                 {
                     WorkerId = workerId,
+                    WorkerUserName = workerUserName,
+
                     IntervalStart = start.ToString("o"),
                     IntervalEnd = end.ToString("o"),
                     Apps = appsJson
-                });
+                }); 
         }
 
         public async Task<IEnumerable<AppUsageLog>> GetUnsyncedAsync()

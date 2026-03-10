@@ -13,15 +13,16 @@ namespace Tracer.Data
         }
          
         // Inserta un nuevo cambio de estado
-        public async Task LogStateAsync(string workerId, StateCategory category, WorkState state,StateType type)
+        public async Task LogStateAsync(string workerId,string workerUserName, StateCategory category, WorkState state,StateType type)
         {
             using var conn = _db.GetConnection();
             await conn.ExecuteAsync(@"
-                INSERT INTO StateLog (WorkerId, Category, State,Type, Timestamp, Synced)
-                VALUES (@WorkerId, @Category, @State,@Type ,@Timestamp, 0)",
+                INSERT INTO StateLog (WorkerId, WorkerUserName, Category, State,Type, Timestamp, Synced)
+                VALUES (@WorkerId, @WorkerUserName, @Category, @State,@Type ,@Timestamp, 0)",
                 new
                 {
                     WorkerId = workerId,
+                    WorkerUserName = workerUserName,
                     Category = category.ToString(),
                     State = state.ToString(),
                     Type = type.ToString(),
@@ -53,6 +54,28 @@ namespace Tracer.Data
                 new { WorkerId = workerId });
 
             return CalculateActiveTime(logs.ToList());
+        }
+
+        public async Task<IEnumerable<StateLog>> GetUnsyncedAsync()
+        {
+            using var conn = _db.GetConnection();
+            var data = await conn.QueryAsync<StateLog>(@"
+                SELECT * FROM StateLog
+                WHERE Synced = 0");
+
+
+            return data;
+
+        }
+
+        public async Task MarkSyncedAsync(int id)
+        {
+            using var conn = _db.GetConnection();
+            await conn.ExecuteAsync(@"
+                UPDATE StateLog
+                SET Synced = 1
+                WHERE Id = @Id",
+                new { Id = id });
         }
 
         private TimeSpan CalculateActiveTime(List<StateLog> logs)

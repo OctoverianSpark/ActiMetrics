@@ -11,6 +11,7 @@ namespace Tracer.Service.Services
         private readonly StateRepository _repository;
         private readonly ActivityService _activityService;
         private readonly string _workerId;
+        private readonly string _workerUserName;
         private ITrayService? _trayService;
         private StateCategory _currentCategory = StateCategory.Inactive;
         private WorkState _currentState = WorkState.Idle;
@@ -24,6 +25,7 @@ namespace Tracer.Service.Services
             _repository = repository;
             _activityService = activityService;
             _workerId = Environment.MachineName;
+            _workerUserName = Environment.UserName;
         }
 
         public async Task InitializeAsync()
@@ -82,7 +84,7 @@ namespace Tracer.Service.Services
             _currentCategory = category;
             _currentState = state;
             _currentType = type;
-            await _repository.LogStateAsync(_workerId, category, state, type);
+            await _repository.LogStateAsync(_workerId, _workerUserName,category, state, type);
         }
         private string Format(TimeSpan t) =>
             $"{(int)t.TotalHours:D2}h {t.Minutes:D2}m {t.Seconds:D2}s";
