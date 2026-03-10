@@ -8,11 +8,13 @@ namespace Tracer.Service.Workers
     {
         private readonly ScreenshotService _screenshotService;
         private readonly AppTrackerService _appTrackerService;
+        private readonly SyncService _syncService;
 
-        public ScreenWorker(ScreenshotService screenshotService, AppTrackerService appTrackerService)
+        public ScreenWorker(ScreenshotService screenshotService, AppTrackerService appTrackerService,SyncService syncService)
         {
             _screenshotService = screenshotService;
             _appTrackerService = appTrackerService;
+            _syncService = syncService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -22,10 +24,12 @@ namespace Tracer.Service.Workers
                 _appTrackerService.Tick();
 
                 var files = await _screenshotService.TickAsync();
+                Console.WriteLine(files);
                 if (files is not null)
                     await _appTrackerService.FlushIntervalAsync();
 
-                await Task.Delay(1000, stoppingToken);
+                await _syncService.SyncScreenshotAsync();
+                await Task.Delay(30000, stoppingToken);
             }
         }
     }

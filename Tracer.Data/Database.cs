@@ -32,17 +32,19 @@ namespace Tracer.Data
                 CREATE TABLE IF NOT EXISTS StateLog (
                     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
                     WorkerId  TEXT    NOT NULL,
+                    WorkerUserName  TEXT    NOT NULL,
                     Category  TEXT    NOT NULL,
                     State     TEXT    NOT NULL,
                     Type      TEXT    NOT NULL, 
                     Timestamp TEXT    NOT NULL,
                     Synced    INTEGER NOT NULL DEFAULT 0
                 );
-            ");
+            "); 
             conn.Execute(@"
                     CREATE TABLE IF NOT EXISTS AppUsageLog (
                         Id            INTEGER PRIMARY KEY AUTOINCREMENT,
                         WorkerId      TEXT    NOT NULL,
+                        WorkerUserName      TEXT    NOT NULL,
                         Apps       TEXT    NOT NULL,
                         Seconds       REAL    NOT NULL DEFAULT 0,
                         IntervalStart TEXT    NOT NULL,
@@ -50,6 +52,15 @@ namespace Tracer.Data
                         Synced        INTEGER NOT NULL DEFAULT 0
                     );
                 ");
+            conn.Execute(@"
+                CREATE TABLE IF NOT EXISTS Screenshots (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    WorkerId TEXT NOT NULL,
+                    FilePath TEXT NOT NULL,
+                    Synced INTEGER NOT NULL DEFAULT 0);
+            ");
+
+            
         }
 
         public IDbConnection GetConnection() => new SqliteConnection(_connectionString);
