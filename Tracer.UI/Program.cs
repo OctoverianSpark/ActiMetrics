@@ -13,7 +13,7 @@ namespace Tracer.UI
         [DllImport("kernel32.dll")]
         static extern bool AllocConsole();
 
-        [STAThread]
+        [STAThread] 
         static async Task Main(string[] args)
         {
 
@@ -24,15 +24,29 @@ namespace Tracer.UI
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureServices(services =>
                 {
+
+                    //Data
                     services.AddSingleton<Database>();
                     services.AddSingleton<StateRepository>();
                     services.AddSingleton<AppUsageRepository>();
+                    services.AddSingleton<ScreenshotRepository>();
+
+
+                    //Services
+                    services.AddSingleton<TokenService>(new TokenService("MCBO9LzhFDMm72jcLQhSgdnPVznSxZj8/2fqQ5G3mzg="));
                     services.AddSingleton<ActivityService>();
                     services.AddSingleton<TimerService>();
                     services.AddSingleton<ScreenshotService>();
                     services.AddSingleton<AppTrackerService>();
+                    services.AddSingleton<WebSocketService>();
+                    services.AddSingleton<SyncService>(); 
+
+
+                    //Workers
                     services.AddHostedService<TimeWorker>();
                     services.AddHostedService<ScreenWorker>();
+                    services.AddHostedService<WebSocketWorker>();
+                    services.AddHostedService<SyncWorker>();
                 }) 
                 .Build();
 

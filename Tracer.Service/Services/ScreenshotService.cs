@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using Tracer.Data;
 
 namespace Tracer.Service.Services
 {
@@ -9,6 +10,7 @@ namespace Tracer.Service.Services
     {
         private readonly string _workerId;
         private readonly string _screenshotFolder;
+        private readonly ScreenshotRepository _screenshotRepository;
         private readonly TimeSpan _interval = TimeSpan.FromMinutes(5);
         private DateTime _lastScreenshot = DateTime.MinValue;
         private static readonly ImageCodecInfo JpegCodec =
@@ -47,24 +49,26 @@ namespace Tracer.Service.Services
             return monitors;
         }
 
-        public ScreenshotService()
+        public ScreenshotService(ScreenshotRepository screenshotRepository)
         {
             _workerId = Environment.MachineName;
             _screenshotFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Tracer", "Screenshots"
             );
+            _screenshotRepository = screenshotRepository;
             Directory.CreateDirectory(_screenshotFolder);
         }
+
+
         public async Task<string[]?> TickAsync()
         {
-            if (DateTime.Now - _lastScreenshot < _interval) return null;
-
+             
             try
             {
                 var monitors = GetAllMonitors();
                 var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                var files = new List<string>();
+                string[] files = [];
 
                 for (int i = 0; i < monitors.Count; i++)
                 {
@@ -78,13 +82,20 @@ namespace Tracer.Service.Services
                     var filePath = Path.Combine(_screenshotFolder, fileName);
 
                     bitmap.Save(filePath, JpegCodec, GetEncoderParams(60));
-                    files.Add(fileName);
+
+                    files.Append<string>(fileName);
+                    await _screenshotRepository.LogIntervalAsync(_workerId, filePath);
+
+                     
+
 
                     Console.WriteLine($"[Screenshot] Monitor {i + 1} → {fileName}");
-                }
+
+                } 
 
                 _lastScreenshot = DateTime.Now;
-                return files.ToArray();
+
+                return files;
             }
             catch (Exception ex)
             {
