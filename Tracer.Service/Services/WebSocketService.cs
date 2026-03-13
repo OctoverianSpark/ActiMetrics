@@ -120,7 +120,6 @@ namespace Tracer.Service.Services
         private async Task HandleActionAsync(WsActionMessage m)
         {
 
-            Console.WriteLine(m.Action.ToString());
             await (m.Action switch
             {
                 WsActionType.Lock => Task.Run(() => LockWorkStation()),
