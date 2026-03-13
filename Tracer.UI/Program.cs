@@ -13,53 +13,53 @@ namespace Tracer.UI
         [DllImport("kernel32.dll")]
         static extern bool AllocConsole();
 
-        [STAThread] 
+        [STAThread]
         static async Task Main(string[] args)
         {
-
             AllocConsole();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-
+            var uiContext = new WindowsFormsSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(uiContext);
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureServices(services =>
                 {
-
-                    //Data
+                    // Data
                     services.AddSingleton<Database>();
                     services.AddSingleton<StateRepository>();
                     services.AddSingleton<AppUsageRepository>();
                     services.AddSingleton<ScreenshotRepository>();
 
-
-                    //Services
+                    // Services
                     services.AddSingleton<TokenService>(new TokenService("MCBO9LzhFDMm72jcLQhSgdnPVznSxZj8/2fqQ5G3mzg="));
                     services.AddSingleton<ActivityService>();
                     services.AddSingleton<TimerService>();
                     services.AddSingleton<ScreenshotService>();
                     services.AddSingleton<AppTrackerService>();
                     services.AddSingleton<WebSocketService>();
-                    services.AddSingleton<SyncService>(); 
+                    services.AddSingleton<SyncService>();
 
-
-                    //Workers
+                    // Workers
                     services.AddHostedService<TimeWorker>();
                     services.AddHostedService<ScreenWorker>();
                     services.AddHostedService<WebSocketWorker>();
                     services.AddHostedService<SyncWorker>();
-                }) 
+                })
                 .Build();
 
             var timerService = host.Services.GetRequiredService<TimerService>();
-            var trayService = new TrayService(timerService);
+            var socketService = host.Services.GetRequiredService<WebSocketService>();
+
+            using var trayService = new TrayService(timerService, socketService, uiContext!);
 
             var cts = new CancellationTokenSource();
             _ = host.RunAsync(cts.Token);
 
+            // Application.Run() bloquea aquí hasta que se llame Application.Exit()
             Application.Run();
 
-            cts.Cancel();
-            trayService.Dispose();
+            // Limpieza al salir
+            await cts.CancelAsync(); // ← CancelAsync es preferible en .NET 6+
             await host.StopAsync();
         }
     }
