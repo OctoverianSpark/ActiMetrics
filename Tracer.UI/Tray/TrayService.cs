@@ -13,12 +13,14 @@ namespace Tracer.UI.Tray
         private readonly NotifyIcon _notifyIcon;
         private readonly TimerService _timerService;
         private readonly WebSocketService _websocketService;
+        private readonly SyncService _syncService;
         private readonly SynchronizationContext _uiContext;
         private readonly ContextMenuStrip _menu; // ← referencia directa, nunca null
 
-        public TrayService(TimerService timerService, WebSocketService socket, SynchronizationContext uiContext)
+        public TrayService(TimerService timerService, WebSocketService socket,SyncService syncService ,SynchronizationContext uiContext)
         {
             _timerService = timerService;
+            _syncService = syncService;
             _websocketService = socket;
             _uiContext = uiContext;
 
@@ -83,12 +85,18 @@ namespace Tracer.UI.Tray
             }
 
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("❌ Salir", null, (s, e) => System.Windows.Forms.Application.Exit());
 
             UpdateMenuCheck(WorkState.Working);
             return menu;
         }
-
+        public void OpenTicketForm()
+        {
+            var ticketForm = new Ticket(_syncService);
+            ticketForm.Show();
+        }
         public void UpdateMenuCheck(WorkState activeState)
         {
             foreach (var (state, item) in _stateItems)

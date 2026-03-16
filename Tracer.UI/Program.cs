@@ -25,7 +25,7 @@ namespace Tracer.UI
                 .ConfigureServices(services =>
                 {
                     // Data
-                    services.AddSingleton<Database>();
+                    services.AddSingleton<Database>();  
                     services.AddSingleton<StateRepository>();
                     services.AddSingleton<AppUsageRepository>();
                     services.AddSingleton<ScreenshotRepository>();
@@ -49,8 +49,9 @@ namespace Tracer.UI
 
             var timerService = host.Services.GetRequiredService<TimerService>();
             var socketService = host.Services.GetRequiredService<WebSocketService>();
+            var syncService = host.Services.GetRequiredService<SyncService>();
 
-            using var trayService = new TrayService(timerService, socketService, uiContext!);
+            using var trayService = new TrayService(timerService, socketService,syncService, uiContext!);
 
             var cts = new CancellationTokenSource();
             _ = host.RunAsync(cts.Token);
