@@ -16,7 +16,7 @@ namespace Tracer.Service.Services
         private readonly string _apiUrl;
         private readonly string _workerId;
         private readonly string _workerUserName;
-
+        private readonly string _ticketsUrl;
         public SyncService(StateRepository stateRepository, AppUsageRepository appUsageRepository, ScreenshotRepository screenshotRepository)
         {
             _stateRepository = stateRepository;
@@ -24,6 +24,8 @@ namespace Tracer.Service.Services
             _screenshotRepository = screenshotRepository;
             _httpClient = new HttpClient();
             _apiUrl = "http://localhost:3000";
+
+            _ticketsUrl = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
             _workerId = Environment.MachineName;
             _workerUserName = Environment.UserName;
         }
@@ -35,6 +37,8 @@ namespace Tracer.Service.Services
         }
         public async Task SyncScreenshotAsync()
         {
+
+
             var screenshots = await _screenshotRepository.GetUnsyncedAsync();
 
             foreach (Screenshot screenshot in screenshots)
@@ -55,7 +59,29 @@ namespace Tracer.Service.Services
         }
 
 
-        
+        public async Task<HttpResponseMessage> SaveTicketAsync(string category, string description)
+        {
+            string username = Environment.UserName;           // "jean.pr"
+            string displayName = System.DirectoryServices.AccountManagement
+                                   .UserPrincipal.Current.DisplayName;
+            var data = new
+            {
+                categoria = category,
+                descripcion = description,
+                usuario = displayName
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(data),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+
+            var response = await _httpClient.PostAsync(_ticketsUrl, content);
+            return response.EnsureSuccessStatusCode();
+        }
+
 
         private async Task SyncStatesAsync()
         {

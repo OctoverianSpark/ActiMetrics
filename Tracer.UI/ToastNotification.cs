@@ -40,11 +40,11 @@ public class ToastNotification : Form
         lblTitulo = new Label();
         lblTitulo.Text = titulo;
         lblTitulo.ForeColor = Color.White;
-        lblTitulo.Font = new Font("Segoe UI",20, FontStyle.Bold);
+        lblTitulo.Font = new Font("Segoe UI", 20, FontStyle.Bold);
         lblTitulo.Location = new Point(25, 30);
         lblTitulo.Size = new Size(560, 30);
         lblTitulo.BackColor = Color.Transparent;
-         
+
         // Mensaje 
         lblMensaje = new Label();
         lblMensaje.Text = mensaje;
@@ -109,6 +109,11 @@ public class ToastNotification : Form
             }
         };
         timer.Start();
+    }
+
+    private void InitializeComponent()
+    {
+
     }
 
     private void SlideOut()
