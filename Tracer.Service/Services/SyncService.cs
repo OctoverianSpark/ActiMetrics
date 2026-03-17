@@ -23,7 +23,7 @@ namespace Tracer.Service.Services
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
             _httpClient = new HttpClient();
-            _apiUrl = "http://localhost:3000";
+            _apiUrl = "https://tracerapi.asistentevirtualsas.com";
 
             _ticketsUrl = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
             _workerId = Environment.MachineName;
