@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Runtime.InteropServices;
@@ -21,17 +22,24 @@ namespace Tracer.UI
             Application.SetCompatibleTextRenderingDefault(false);
             var uiContext = new WindowsFormsSynchronizationContext();
             SynchronizationContext.SetSynchronizationContext(uiContext);
-            var host = Host.CreateDefaultBuilder(args)
+            var host = Host.CreateDefaultBuilder(args).ConfigureAppConfiguration((context, config) =>
+            {
+                config.SetBasePath(AppContext.BaseDirectory)
+                      .AddJsonFile("appsettings.json", optional: true)
+                      .AddJsonFile($"appsettings.Development.json", optional: true)
+                      .AddEnvironmentVariables();
+            })
                 .ConfigureServices(services =>
                 {
                     // Data
                     services.AddSingleton<Database>();  
+                    services.AddSingleton<Session>();
                     services.AddSingleton<StateRepository>();
                     services.AddSingleton<AppUsageRepository>();
                     services.AddSingleton<ScreenshotRepository>();
 
                     // Services
-                    services.AddSingleton<TokenService>(new TokenService("MCBO9LzhFDMm72jcLQhSgdnPVznSxZj8/2fqQ5G3mzg="));
+                    services.AddSingleton<TokenService>();
                     services.AddSingleton<ActivityService>();
                     services.AddSingleton<TimerService>();
                     services.AddSingleton<ScreenshotService>();
@@ -46,6 +54,21 @@ namespace Tracer.UI
                     services.AddHostedService<SyncWorker>();
                 })
                 .Build();
+
+            Session session = host.Services.GetRequiredService<Session>();
+
+            if (!session.IsAuthenticated())
+            {
+                LoginCheck login = new();
+
+                if(login.ShowDialog() != DialogResult.OK) 
+                {
+                    Application.Exit();
+                    return;
+                }
+                session.SaveEmail(login.Email!);
+            }
+            Console.WriteLine($"[SESSION]: EMAIL LOGGED_IN LIKE :{session.GetEmail()}");
 
             var timerService = host.Services.GetRequiredService<TimerService>();
             var socketService = host.Services.GetRequiredService<WebSocketService>();
