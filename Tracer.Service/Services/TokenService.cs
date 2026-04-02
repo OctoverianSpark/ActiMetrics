@@ -1,28 +1,38 @@
-﻿using System.IdentityModel.Tokens.Jwt;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.IdentityModel.Tokens;
 
 namespace Tracer.Service.Services
 {
     public class TokenService
     {
-        private readonly string _secret;
+        private readonly Session _session;
+        private readonly IConfiguration _configuration;
 
-        public TokenService(string secret)
+        public TokenService( Session session, IConfiguration configuration)
         {
-            _secret = secret;
+            _session = session;
+
+            _configuration = configuration;
         }
 
         public async Task<string> GenerateTokenAsync()
         {
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
+            string secret = _configuration["Secret"];
+            Console.WriteLine($"[TokenService] Generating token for secret: {secret}");
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var email = _session.GetEmail();
+            Console.WriteLine($"[TokenService] Generating token for email: {email}");
 
             var claims = new[]
             {
+                new Claim("email",         email),
                 new Claim("machineId",     GetMachineId()),
                 new Claim("machineSerial", GetMachineSerial()),
                 new Claim("machineName",   Environment.MachineName),
