@@ -22,7 +22,7 @@ namespace Tracer.Service.Services
         private ClientWebSocket _client = new();
 
         private const string ServerPORT = "8080";
-        private const string ServerUrl = $"ws://localhost:{ServerPORT}";
+        private const string ServerUrl = $"wss://tracerconn.asistentevirtualsas.com";
 
 
         public event Action<(string Title, string Text)>? OnNotification;
