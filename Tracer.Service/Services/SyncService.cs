@@ -48,14 +48,14 @@ namespace Tracer.Service.Services
                 var fileName = Path.GetFileName(screenshot.FilePath);
                 var fileContent = new StreamContent(fileStream);
                 content.Add(fileContent, "file", fileName);
-                content.Add(new StringContent(Environment.MachineName),"machine");
+                content.Add(new StringContent(Environment.MachineName), "machine");
 
                 var response = await _httpClient.PostAsync($"{_apiUrl}/tracer/screenshot", content);
 
                 if (response.IsSuccessStatusCode)
                     Console.WriteLine(response.Content);
-                    await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
-            } 
+                await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
+            }
         }
 
 
@@ -104,7 +104,7 @@ namespace Tracer.Service.Services
                 else
                 {
                     Console.WriteLine($"[Sync] Error estados: {response.StatusCode}");
-                } 
+                }
             }
             catch (Exception ex)
             {
@@ -140,5 +140,25 @@ namespace Tracer.Service.Services
                 Console.WriteLine($"[Sync] Excepción app usage: {ex.Message}");
             }
         }
+
+        protected async Task GetSchedule(int personal_id)
+        {
+            var response = await _httpClient.GetAsync($"{_apiUrl}/schedules?personal={personal_id}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                var schedules = JsonSerializer.Deserialize<List<Schedule>>(json);
+                var programations = schedules?.Select(s => s.Programation_Id).ToList();
+
+                Console.WriteLine($"[Sync] Programaciones obtenidas: {programations?.Count}");
+                Console.WriteLine($"[Sync] Horarios obtenidos: {schedules?.Count}");
+            }
+            else
+            {
+                Console.WriteLine($"[Sync] Error al obtener horarios: {response.StatusCode}");
+            }
+        }
+
     }
 }
