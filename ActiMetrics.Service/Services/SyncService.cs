@@ -12,17 +12,20 @@ namespace ActiMetrics.Service.Services
     {
         private readonly StateRepository _stateRepository;
         private readonly AppUsageRepository _appUsageRepository;
+
+        private readonly Session _sessionRepository;
         private readonly ScreenshotRepository _screenshotRepository;
         private readonly HttpClient _httpClient;
         private readonly string _apiUrl;
         private readonly string _workerId;
         private readonly string _workerUserName;
         private readonly string _ticketsUrl;
-        public SyncService(StateRepository stateRepository, AppUsageRepository appUsageRepository, ScreenshotRepository screenshotRepository)
+        public SyncService(StateRepository stateRepository, AppUsageRepository appUsageRepository, ScreenshotRepository screenshotRepository, Session sessionRepository)
         {
             _stateRepository = stateRepository;
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
+            _sessionRepository = sessionRepository;
             _httpClient = new HttpClient();
             _apiUrl = "https://tracerapi.asistentevirtualsas.com";
 
@@ -143,50 +146,77 @@ namespace ActiMetrics.Service.Services
         }
 
 
-        public async Task<Programation?> GetTodayScheduleAsync(int personalId)
+        // Fuera de la clase, estático para reutilizar
+        private static readonly JsonSerializerOptions _jsonOptions = new()
         {
-            var response = await _httpClient.GetAsync($"{_apiUrl}/schedules?personal_id={personalId}").ConfigureAwait(false);
+            PropertyNameCaseInsensitive = true
+        };
 
-            if (!response.IsSuccessStatusCode) return null;
+        public async Task<Programation?> GetTodayScheduleAsync()
+        {
+            var email = _sessionRepository.GetEmail();
+            var today = GetToday();
 
-            var json = await response.Content.ReadAsStringAsync();
-            var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            // 1. Obtener personal y schedules en paralelo si tienes el personal_id cacheado
+            // Si no, primero necesitas el Id del personal
+            var personal = await GetPersonalByEmailAsync(email);
+            if (personal is null) return null;
 
-            var today = DateTime.Now.DayOfWeek switch
-            {
-                DayOfWeek.Monday => Days.L,
-                DayOfWeek.Tuesday => Days.M,
-                DayOfWeek.Wednesday => Days.X,
-                DayOfWeek.Thursday => Days.J,
-                DayOfWeek.Friday => Days.V,
-                DayOfWeek.Saturday => Days.S,
-                DayOfWeek.Sunday => Days.D,
-                _ => throw new ArgumentOutOfRangeException()
-            };
-
-            Console.WriteLine($"[Sync] Día actual: {today}");
-            Console.WriteLine($"[Sync] Horarios recibidos: {schedules?.Count ?? 0}");
-
-            var schedule = schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
-
+            // 2. Buscar schedule del día
+            var schedule = await GetScheduleForDayAsync(personal.Id, today);
             if (schedule is null)
             {
-                Console.WriteLine($"[Sync] Sin programación para el día {today}");
+                Console.WriteLine("[Sync] Sin programación para el día {Day}", today);
                 return null;
             }
 
-            var res = await _httpClient.GetAsync($"{_apiUrl}/programations/{schedule.Programation_Id}").ConfigureAwait(false);
+            // 3. Obtener programation
+            return await GetProgramationAsync(schedule.Programation_Id);
+        }
 
+        // Métodos privados pequeños y reutilizables
+        private async Task<EmployeeData?> GetPersonalByEmailAsync(string email)
+        {
+            var res = await _httpClient.GetAsync($"{_apiUrl}/personal/findbyemail?email={email}").ConfigureAwait(false);
+
+            Console.WriteLine($"[DEBUG] StatusCode: {res.StatusCode}");
+            Console.WriteLine($"[DEBUG] Body: {await res.Content.ReadAsStringAsync()}");
             if (!res.IsSuccessStatusCode) return null;
 
-            json = await res.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<Programation>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var json = await res.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<EmployeeData>(json, _jsonOptions);
         }
+
+        private async Task<Schedule?> GetScheduleForDayAsync(int personalId, Days today)
+        {
+            var res = await _httpClient.GetAsync($"{_apiUrl}/schedules?personal_id={personalId}").ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode) return null;
+
+            var json = await res.Content.ReadAsStringAsync();
+            var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, _jsonOptions);
+            return schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
+        }
+
+        private async Task<Programation?> GetProgramationAsync(int programationId)
+        {
+            var res = await _httpClient.GetAsync($"{_apiUrl}/programations/{programationId}").ConfigureAwait(false);
+            if (!res.IsSuccessStatusCode) return null;
+
+            var json = await res.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<Programation>(json, _jsonOptions);
+        }
+
+        private static Days GetToday() => DateTime.Now.DayOfWeek switch
+        {
+            DayOfWeek.Monday => Days.L,
+            DayOfWeek.Tuesday => Days.M,
+            DayOfWeek.Wednesday => Days.X,
+            DayOfWeek.Thursday => Days.J,
+            DayOfWeek.Friday => Days.V,
+            DayOfWeek.Saturday => Days.S,
+            DayOfWeek.Sunday => Days.D,
+            _ => throw new ArgumentOutOfRangeException()
+        };
+
     }
 }

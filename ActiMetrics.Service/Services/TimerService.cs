@@ -37,7 +37,7 @@ namespace ActiMetrics.Service.Services
 
         public async Task InitializeAsync()
         {
-            _todayProgramation = await _syncService.GetTodayScheduleAsync(1).ConfigureAwait(false);
+            _todayProgramation = await _syncService.GetTodayScheduleAsync().ConfigureAwait(false);
 
             if (_todayProgramation is null)
             {
