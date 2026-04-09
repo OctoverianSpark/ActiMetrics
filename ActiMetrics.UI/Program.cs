@@ -24,7 +24,10 @@ namespace ActiMetrics.UI
             .OnFirstRun(v => StartupManager.HabilitarInicio(true))
             .OnBeforeUninstallFastCallback(v => StartupManager.HabilitarInicio(false))
             .Run();
-            //AllocConsole();
+
+#if DEBUG
+            AllocConsole();
+#endif
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             var uiContext = new WindowsFormsSynchronizationContext();

@@ -98,7 +98,6 @@ namespace ActiMetrics.UI.Tray
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("❌ Salir", null, (s, e) => System.Windows.Forms.Application.Exit());
 
             UpdateMenuCheck(WorkState.Working);
             return menu;

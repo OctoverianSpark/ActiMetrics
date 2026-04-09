@@ -19,7 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ActiMetrics.Data\ActiMetrics.Data.csproj" />
-    <ProjectReference Include="..\ActiMetrics.UI\ActiMetrics.UI.csproj" />
-	<ProjectReference Include="..\ActiMetrics.Shared\ActiMetrics.Shared.csproj" />
+	  <ProjectReference Include="..\ActiMetrics.Shared\ActiMetrics.Shared.csproj" />
   </ItemGroup>
 </Project>
