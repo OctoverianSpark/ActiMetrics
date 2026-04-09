@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="appsettings.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+		<Content Include="appsettings.Development.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\ActiMetrics.Data\ActiMetrics.Data.csproj" />
+		<ProjectReference Include="..\ActiMetrics.Service\ActiMetrics.Service.csproj" />
+		<ProjectReference Include="..\ActiMetrics.Shared\ActiMetrics.Shared.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+	  <PackageReference Include="Velopack" Version="0.0.1298" />
+	</ItemGroup>
+
+</Project>

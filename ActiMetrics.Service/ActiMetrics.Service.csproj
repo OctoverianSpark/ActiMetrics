@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Tracer.Service-d8ab6ae9-7cfb-48cf-8248-db20cfd5f19a</UserSecretsId>
+	  
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="10.0.5" />
+	  <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+	  <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
+	  <PackageReference Include="System.Management" Version="10.0.3" />
+	  <PackageReference Include="Velopack" Version="0.0.1298" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ActiMetrics.Data\ActiMetrics.Data.csproj" />
+    <ProjectReference Include="..\ActiMetrics.UI\ActiMetrics.UI.csproj" />
+	<ProjectReference Include="..\ActiMetrics.Shared\ActiMetrics.Shared.csproj" />
+  </ItemGroup>
+</Project>
