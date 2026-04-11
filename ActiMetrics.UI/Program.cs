@@ -25,9 +25,9 @@ namespace ActiMetrics.UI
             .OnBeforeUninstallFastCallback(v => StartupManager.HabilitarInicio(false))
             .Run();
 
-#if DEBUG
+//#if DEBUG
             AllocConsole();
-#endif
+//#endif
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             var uiContext = new WindowsFormsSynchronizationContext();

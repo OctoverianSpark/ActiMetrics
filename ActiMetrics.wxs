@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="ActiMetrics"
+           Version="1.0.0"
+           Manufacturer="GoXpert SAS"
+           UpgradeCode="f70508f8-1cd1-4705-a772-0bf8acf9aa7d"
+           Scope="perMachine"
+           InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="Ya existe una versión más nueva instalada." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <CustomAction Id="LaunchApp"
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="asyncNoWait"
+                  FileRef="File_9"
+                  ExeCommand="" />
+
+    <InstallExecuteSequence>
+    <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
+    <Feature Id="ProductFeature" Title="ActiMetrics" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentRef Id="StartupRegistry" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ActiMetrics" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="ActiMetrics" />
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="StartupRegistry" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                     Name="ActiMetrics"
+                     Value="[INSTALLFOLDER]ActiMetrics.exe"
+                     Type="string"
+                     KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+</Wix>

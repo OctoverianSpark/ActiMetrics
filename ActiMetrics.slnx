@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ActiMetrics.Data/ActiMetrics.Data.csproj" Id="742ecc14-5517-481b-90b6-c0bcc0942b34" />
+  <Project Path="ActiMetrics.Shared/ActiMetrics.Shared.csproj" Id="4813cd31-e890-4f94-84a8-2a2aea137cf7" />
+  <Project Path="ActiMetrics.UI/ActiMetrics.UI.csproj" Id="91aa4ee9-d561-4143-a5ea-86a9838b45bf" />
+  <Project Path="ActiMetrics.Service/ActiMetrics.Service.csproj" />
+</Solution>
