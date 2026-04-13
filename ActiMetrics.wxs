@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="ActiMetrics"
            Version="1.0.0"
            Manufacturer="GoXpert SAS"
@@ -10,19 +11,27 @@
     <MajorUpgrade DowngradeErrorMessage="Ya existe una versión más nueva instalada." />
     <MediaTemplate EmbedCab="yes" />
 
-    <CustomAction Id="LaunchApp"
-                  Execute="immediate"
-                  Impersonate="yes"
-                  Return="asyncNoWait"
-                  FileRef="File_9"
-                  ExeCommand="" />
+    <CustomAction Id="InstallService"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"
+                  FileRef="HostExe"
+                  ExeCommand="--install" />
 
+    <CustomAction Id="UninstallService"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  FileRef="HostExe"
+                  ExeCommand="--uninstall" />
     <InstallExecuteSequence>
-    <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed AND NOT REMOVE" />
+      <Custom Action="InstallService" After="InstallFiles" Condition="NOT Installed AND NOT REMOVE" />
+      <Custom Action="UninstallService" Before="RemoveFiles" Condition="REMOVE" />
     </InstallExecuteSequence>
 
     <Feature Id="ProductFeature" Title="ActiMetrics" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
+      <ComponentRef Id="HostComponent" />
       <ComponentRef Id="StartupRegistry" />
     </Feature>
   </Package>
@@ -31,9 +40,12 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="ActiMetrics" />
     </StandardDirectory>
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="ActiMetrics" />
-    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="HostComponent" Directory="INSTALLFOLDER">
+      <File Id="HostExe" Source="./publish/ActiMetrics.Host.exe" KeyPath="yes" />
+    </Component>
   </Fragment>
 
   <Fragment>
@@ -41,7 +53,7 @@
       <RegistryValue Root="HKLM"
                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
                      Name="ActiMetrics"
-                     Value="[INSTALLFOLDER]ActiMetrics.exe"
+                     Value="[INSTALLFOLDER]ActiMetrics.Host.exe"
                      Type="string"
                      KeyPath="yes" />
     </Component>

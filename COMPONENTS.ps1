@@ -1,7 +1,12 @@
 # generate-components.ps1
 $publishDir = Resolve-Path "./publish"
 $output = "./Components.wxs"
-$files = Get-ChildItem -Path $publishDir -File -Recurse
+
+# Excluir el Host.exe porque se maneja en ActiMetrics.wxs
+$excludedFiles = @("ActiMetrics.Host.exe")
+
+$files = Get-ChildItem -Path $publishDir -File -Recurse | 
+Where-Object { $excludedFiles -notcontains $_.Name }
 
 $xml = '<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
@@ -16,11 +21,9 @@ foreach ($file in $files) {
   $fileId = "File_$counter"
   $counter++
 
-  # Si el archivo está en una subcarpeta, crear subdirectorio
   $subDir = Split-Path $relativePath -Parent
     
   if ($subDir) {
-    $dirId = "Dir_" + ($subDir -replace '[\\.\-\s]', '_')
     $xml += "
       <Component Id=`"$componentId`" Subdirectory=`"$subDir`">
         <File Id=`"$fileId`" Source=`"./publish/$relativePath`" />
