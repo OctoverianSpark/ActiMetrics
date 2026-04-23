@@ -157,16 +157,16 @@ namespace ActiMetrics.Service.Services
             var email = _sessionRepository.GetEmail();
             var today = GetToday();
 
-            // 1. Obtener personal y schedules en paralelo si tienes el personal_id cacheado
-            // Si no, primero necesitas el Id del personal
-            var personal = await GetPersonalByEmailAsync(email);
-            if (personal is null) return null;
+            // 1. Obtener appuser y schedules en paralelo si tienes el appuser_id cacheado
+            // Si no, primero necesitas el Id del appuser
+            var appuser = await GetAppuserByEmailAsync(email);
+            if (appuser is null) return null;
 
             // 2. Buscar schedule del día
-            var schedule = await GetScheduleForDayAsync(personal.Id, today);
+            var schedule = await GetScheduleForDayAsync(appuser.Id, today);
             if (schedule is null)
             {
-                Console.WriteLine("[Sync] Sin programación para el día {Day}", today);
+                Console.WriteLine($"[Sync] Sin programación para el día {today}");
                 return null;
             }
 
@@ -175,21 +175,23 @@ namespace ActiMetrics.Service.Services
         }
 
         // Métodos privados pequeños y reutilizables
-        private async Task<EmployeeData?> GetPersonalByEmailAsync(string email)
+        private async Task<AppUser?> GetAppuserByEmailAsync(string email)
         {
-            var res = await _httpClient.GetAsync($"{_apiUrl}/personal/findbyemail?email={email}").ConfigureAwait(false);
+            Console.WriteLine($"[Sync] Buscando appuser por email: {email}");
+            var res = await _httpClient.GetAsync($"{_apiUrl}/appuser/findbyemail?email={email}").ConfigureAwait(false);
 
             Console.WriteLine($"[DEBUG] StatusCode: {res.StatusCode}");
             Console.WriteLine($"[DEBUG] Body: {await res.Content.ReadAsStringAsync()}");
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<EmployeeData>(json, _jsonOptions);
+            return JsonSerializer.Deserialize<AppUser>(json, _jsonOptions);
         }
 
-        private async Task<Schedule?> GetScheduleForDayAsync(int personalId, Days today)
+        private async Task<Schedule?> GetScheduleForDayAsync(int user_id, Days today)
         {
-            var res = await _httpClient.GetAsync($"{_apiUrl}/schedules?personal_id={personalId}").ConfigureAwait(false);
+            Console.WriteLine(user_id.ToString(), today);
+            var res = await _httpClient.GetAsync($"{_apiUrl}/schedules?appuser_id={user_id}").ConfigureAwait(false);
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();

@@ -36,7 +36,7 @@ public class Ticket : Form
         // Arrastrar la ventana haciendo click en cualquier parte
         this.MouseDown += FormMouseDown;
 
-        // --- Botón cerrar personalizado ---
+        // --- Botón cerrar appuserizado ---
         var btnCerrar = new Button();
         btnCerrar.Text = "✕";
         btnCerrar.Size = new Size(32, 32);

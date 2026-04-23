@@ -41,7 +41,6 @@ namespace ActiMetrics.Service.Services
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-
                 try
                 {
                     var token = await _tokenService.GenerateTokenAsync();
@@ -49,15 +48,38 @@ namespace ActiMetrics.Service.Services
                     await _client.ConnectAsync(new Uri($"{ServerUrl}?token={token}"), stoppingToken);
                     _logger.LogInformation("[Tracer] WebSocket connected");
                     await ReceiveLoopAsync(stoppingToken);
-
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("[Tracer] WebSocket shutdown requested.");
+                    break;
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine($"[WebSocket] Connection error: {ex.Message}");
                     _logger.LogError(ex, "WebSocket connection error");
-                    await Task.Delay(5000, stoppingToken); // Espera antes de reconectar
-
-
-
+                    try
+                    {
+                        await Task.Delay(5000, stoppingToken); // Espera antes de reconectar
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
+                finally
+                {
+                    if (_client is not null && (_client.State == WebSocketState.Open || _client.State == WebSocketState.CloseReceived))
+                    {
+                        try
+                        {
+                            await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutting down", CancellationToken.None);
+                        }
+                        catch
+                        {
+                            // Ignore cleanup failures.
+                        }
+                    }
                 }
             }
         }
@@ -74,17 +96,40 @@ namespace ActiMetrics.Service.Services
                 using var ms = new MemoryStream();
                 WebSocketReceiveResult result;
 
-                // Acumula fragmentos hasta EndOfMessage
-                do
+                try
                 {
-                    result = await _client.ReceiveAsync(buffer, stoppingToken);
-                    ms.Write(buffer.Array!, buffer.Offset, result.Count);
+                    // Acumula fragmentos hasta EndOfMessage
+                    do
+                    {
+                        result = await _client.ReceiveAsync(buffer, stoppingToken);
+                        ms.Write(buffer.Array!, buffer.Offset, result.Count);
+                    }
+                    while (!result.EndOfMessage);
                 }
-                while (!result.EndOfMessage);
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("[Tracer] WebSocket receive loop canceled.");
+                    break;
+                }
+                catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("[Tracer] WebSocket receive loop canceled by token.");
+                    break;
+                }
+                catch (TaskCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "[Tracer] WebSocket receive task canceled unexpectedly.");
+                    break;
+                }
+                catch (WebSocketException ex)
+                {
+                    _logger.LogWarning(ex, "[Tracer] WebSocket receive failure.");
+                    break;
+                }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", stoppingToken);
+                    await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
                     break;
                 }
 

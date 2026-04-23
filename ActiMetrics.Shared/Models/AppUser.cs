@@ -1,7 +1,7 @@
 namespace ActiMetrics.Shared.Models
 {
 
-  public class EmployeeData
+  public class AppUser
   {
 
     public int Id { get; set; }

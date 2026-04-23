@@ -7,7 +7,7 @@ namespace ActiMetrics.Shared.Models
   {
     public int Id { get; set; }
 
-    public int Personal_Id { get; set; }
+    public int Appuser_Id { get; set; }
     public int Programation_Id { get; set; }
 
 
