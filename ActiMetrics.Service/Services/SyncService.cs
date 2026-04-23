@@ -27,7 +27,7 @@ namespace ActiMetrics.Service.Services
             _screenshotRepository = screenshotRepository;
             _sessionRepository = sessionRepository;
             _httpClient = new HttpClient();
-            _apiUrl = "https://tracerapi.asistentevirtualsas.com";
+            _apiUrl = "https://actimetrics.asistentevirtualsas.com";
 
             _ticketsUrl = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
             _workerId = Environment.MachineName;
