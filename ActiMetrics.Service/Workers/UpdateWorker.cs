@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using Velopack;
 using Velopack.Sources;
 
@@ -8,10 +9,12 @@ namespace ActiMetrics.Service.Workers
   public class UpdateWorker : BackgroundService
   {
     private readonly ILogger<UpdateWorker> _logger;
+    private readonly IConfiguration _configuration;
 
-    public UpdateWorker(ILogger<UpdateWorker> logger)
+    public UpdateWorker(ILogger<UpdateWorker> logger, IConfiguration configuration)
     {
       _logger = logger;
+      _configuration = configuration;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -29,9 +32,21 @@ namespace ActiMetrics.Service.Workers
     {
       try
       {
+        // Leer configuración de GitHub desde appsettings
+        var repoUrl = _configuration["GitHub:RepoUrl"];
+        var accessToken = _configuration["GitHub:AccessToken"];
+
+        if (string.IsNullOrEmpty(repoUrl))
+        {
+          _logger.LogWarning("[UPDATE]: RepoUrl no configurado en appsettings.json");
+          return;
+        }
+
+        _logger.LogInformation("[UPDATE]: Verificando actualizaciones en {RepoUrl}", repoUrl);
+
         var source = new GithubSource(
-            repoUrl: "https://github.com/tuusuario/ActiMetrics",
-            accessToken: null,
+            repoUrl: repoUrl,
+            accessToken: accessToken,
             prerelease: false
         );
 

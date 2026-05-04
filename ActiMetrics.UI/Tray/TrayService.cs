@@ -16,7 +16,7 @@ namespace ActiMetrics.UI.Tray
         private readonly WebSocketService _websocketService;
         private readonly SyncService _syncService;
         private readonly SynchronizationContext _uiContext;
-        private readonly ContextMenuStrip _menu; // ← referencia directa, nunca null
+        private readonly ContextMenuStrip _menu;
 
         public TrayService(TimerService timerService, WebSocketService socket, SyncService syncService, SynchronizationContext uiContext)
         {
@@ -25,14 +25,15 @@ namespace ActiMetrics.UI.Tray
             _websocketService = socket;
             _uiContext = uiContext;
 
-            _menu = BuildMenu(); // ← primero construimos el menu
+            _menu = BuildMenu();
 
+            var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
             _notifyIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application,
                 Visible = true,
                 Text = "Tracer",
-                ContextMenuStrip = _menu // ← lo asignamos aquí
+                ContextMenuStrip = _menu
             };
 
             _timerService.SetTrayService(this);
@@ -97,7 +98,7 @@ namespace ActiMetrics.UI.Tray
 
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
-            menu.Items.Add(new ToolStripSeparator());
+
 
             UpdateMenuCheck(WorkState.Working);
             return menu;
@@ -120,6 +121,7 @@ namespace ActiMetrics.UI.Tray
 
         public void Dispose()
         {
+            _websocketService.OnNotification -= OnNotification;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _menu.Dispose();

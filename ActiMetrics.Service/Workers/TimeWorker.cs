@@ -9,8 +9,6 @@ namespace ActiMetrics.Service.Workers
     {
         private readonly TimerService _timerService;
         private readonly ILogger<TimeWorker> _logger;
-        private int _tickCount = 0;
-        private const int SyncEverySeconds = 300; // 5 minutos
 
         public TimeWorker(ILogger<TimeWorker> logger, TimerService timerService)
         {

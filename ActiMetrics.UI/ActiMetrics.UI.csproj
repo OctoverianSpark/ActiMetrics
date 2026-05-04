@@ -7,6 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ActiMetrics</AssemblyName>
+		<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
 
   </PropertyGroup>
 
@@ -17,7 +18,13 @@
 		<Content Include="appsettings.Development.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
+		<Content Include="Assets\AppIcon.ico">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
+	<Target Name="CreateLogsDirectory" AfterTargets="AfterBuild">
+		<MakeDir Directories="$(OutDir)logs" Condition="!Exists('$(OutDir)logs')" />
+	</Target>
 	<ItemGroup>
 		<ProjectReference Include="..\ActiMetrics.Data\ActiMetrics.Data.csproj" />
 		<ProjectReference Include="..\ActiMetrics.Service\ActiMetrics.Service.csproj" />
@@ -25,6 +32,8 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+	  <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+	  <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
 	  <PackageReference Include="Velopack" Version="0.0.1298" />
 	</ItemGroup>
 

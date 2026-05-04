@@ -41,7 +41,11 @@ namespace ActiMetrics.Service.Services
 
             if (_todayProgramation is null)
             {
-                Console.WriteLine($"[Tracer] Sin programación para hoy. Worker: {_workerId}");
+                Console.WriteLine($"[Tracer] Sin programación para hoy. Iniciando modo libre de conteo de horas. Worker: {_workerId}");
+                // Modo libre: iniciar como Working sin restricciones de horario
+                await LogStateAsync(StateCategory.Active, WorkState.Working, StateType.Auto);
+                _isReady = true;
+                Console.WriteLine($"[Tracer] Iniciado en modo libre | Worker: {_workerId}");
                 return;
             }
 
@@ -94,6 +98,31 @@ namespace ActiMetrics.Service.Services
             if (category is not null)
                 await LogStateAsync(category.Value, state!.Value, type!.Value);
         }
+        private bool _lunchSoonNotified = false;
+        private Task CheckLunchSoonWarningAsync()
+        {
+            if (_todayProgramation is null) return Task.CompletedTask;
+
+            var ahora = TimeOnly.FromDateTime(DateTime.Now);
+            var startLunch = TimeOnly.ParseExact(_todayProgramation.Start_Lunch, "HH:mm", null);
+            var aviso = startLunch.AddMinutes(-5);
+
+            if (ahora < aviso || ahora >= startLunch)
+            {
+                _lunchSoonNotified = false;
+                return Task.CompletedTask;
+            }
+
+            if (!_lunchSoonNotified)
+            {
+                _lunchSoonNotified = true;
+                _trayService?.Notify(("Almuerzo próximo", $"Tu almuerzo comienza en 5 minutos ({startLunch:HH:mm})."));
+                Console.WriteLine($"[Tracer] Almuerzo en 5 minutos ({startLunch:HH:mm})");
+            }
+
+            return Task.CompletedTask;
+        }
+
         private bool _lunchStartNotified = false;
         private Task CheckLunchStartWarningAsync()
         {
@@ -125,6 +154,7 @@ namespace ActiMetrics.Service.Services
 
             bool isIdle = _activityService.IsIdle();
             await HandleStateTransition(isIdle);
+            await CheckLunchSoonWarningAsync();
             await CheckLunchStartWarningAsync();
             var activeToday = await _repository.GetActiveTodayAsync(_workerId);
             var text = $"[{_currentState}] Activo: {Format(activeToday)}";
@@ -155,5 +185,15 @@ namespace ActiMetrics.Service.Services
 
         private string Format(TimeSpan t) =>
             $"{(int)t.TotalHours:D2}h {t.Minutes:D2}m {t.Seconds:D2}s";
+
+        public string GetCurrentStateInfo()
+        {
+            return $"Estado actual: {_currentState} | Categoría: {_currentCategory} | Tipo: {_currentType} | Tiempo de hoy: {Format(_repository.GetActiveTodayAsync(_workerId).Result)}";
+        }
+
+
     }
+
+
+
 }

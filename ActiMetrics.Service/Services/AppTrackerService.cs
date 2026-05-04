@@ -1,6 +1,7 @@
 ﻿// Tracer.Service/Services/AppTrackerService.cs
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using ActiMetrics.Data;
 
@@ -13,15 +14,41 @@ namespace ActiMetrics.Service.Services
         private readonly string _workerUserName;
 
         private readonly Dictionary<string, double> _currentInterval = new();
-        private DateTime _intervalStart = DateTime.Now;
+        private DateTime _intervalStart = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local);
         private string _lastApp = string.Empty;
-        private DateTime _lastAppStart = DateTime.Now;
+        private DateTime _lastAppStart = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local);
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        private static readonly Dictionary<string, string> BrowserNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["chrome"]   = "Chrome",
+            ["msedge"]   = "Edge",
+            ["firefox"]  = "Firefox",
+            ["brave"]    = "Brave",
+            ["opera"]    = "Opera",
+            ["vivaldi"]  = "Vivaldi",
+            ["iexplore"] = "Internet Explorer",
+        };
+
+        // Sufijos que cada navegador añade al final del título de la ventana
+        private static readonly Dictionary<string, string[]> BrowserSuffixes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["chrome"]   = [" - Google Chrome"],
+            ["msedge"]   = [" - Microsoft Edge"],
+            ["firefox"]  = [" - Mozilla Firefox", " — Mozilla Firefox"],
+            ["brave"]    = [" - Brave"],
+            ["opera"]    = [" - Opera"],
+            ["vivaldi"]  = [" - Vivaldi"],
+            ["iexplore"] = [" - Windows Internet Explorer", " - Internet Explorer"],
+        };
 
         public AppTrackerService(AppUsageRepository repository)
         {
@@ -30,17 +57,15 @@ namespace ActiMetrics.Service.Services
             _workerUserName = Environment.UserName;
         }
 
-        // Llamado cada segundo desde ScreenWorker
         public void Tick()
         {
             var appName = GetForegroundAppName();
             if (string.IsNullOrEmpty(appName)) return;
 
-            var now = DateTime.Now;
+            var now = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local);
 
             if (_lastApp != appName)
             {
-                // Acumula segundos de la app anterior
                 if (!string.IsNullOrEmpty(_lastApp))
                 {
                     var elapsed = (now - _lastAppStart).TotalSeconds;
@@ -54,12 +79,10 @@ namespace ActiMetrics.Service.Services
             }
         }
 
-        // Llamado cuando ScreenshotService toma una captura
         public async Task FlushIntervalAsync()
         {
-            var now = DateTime.Now;
+            var now = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local);
 
-            // Acumula la app actual antes de cerrar el intervalo
             if (!string.IsNullOrEmpty(_lastApp))
             {
                 var elapsed = (now - _lastAppStart).TotalSeconds;
@@ -98,9 +121,33 @@ namespace ActiMetrics.Service.Services
 
                 GetWindowThreadProcessId(hwnd, out uint pid);
                 var process = Process.GetProcessById((int)pid);
+                var processName = process.ProcessName;
+
+                if (BrowserNames.TryGetValue(processName, out var browserLabel))
+                {
+                    var sb = new StringBuilder(512);
+                    GetWindowText(hwnd, sb, sb.Capacity);
+                    var title = sb.ToString().Trim();
+
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        if (BrowserSuffixes.TryGetValue(processName, out var suffixes))
+                        {
+                            foreach (var suffix in suffixes)
+                            {
+                                if (title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    title = title[..^suffix.Length].Trim();
+                                    break;
+                                }
+                            }
+                        }
+                        return $"{browserLabel}: {title}";
+                    }
+                }
 
                 return process.MainModule?.FileVersionInfo.ProductName
-                    ?? process.ProcessName;
+                    ?? processName;
             }
             catch
             {

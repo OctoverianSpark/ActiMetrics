@@ -11,8 +11,6 @@ namespace ActiMetrics.Service.Services
         private readonly string _workerId;
         private readonly string _screenshotFolder;
         private readonly ScreenshotRepository _screenshotRepository;
-        private readonly TimeSpan _interval = TimeSpan.FromMinutes(5);
-        private DateTime _lastScreenshot = DateTime.MinValue;
         private static readonly ImageCodecInfo JpegCodec =
             ImageCodecInfo.GetImageDecoders()
                 .First(c => c.FormatID == ImageFormat.Jpeg.Guid);
@@ -67,7 +65,7 @@ namespace ActiMetrics.Service.Services
             try
             {
                 var monitors = GetAllMonitors();
-                var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                var timestamp = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local).ToString("yyyyMMdd-HHmmss");
                 string[] files = [];
 
                 for (int i = 0; i < monitors.Count; i++)
@@ -92,8 +90,6 @@ namespace ActiMetrics.Service.Services
                     Console.WriteLine($"[Screenshot] Monitor {i + 1} → {fileName}");
 
                 }
-
-                _lastScreenshot = DateTime.Now;
 
                 return files;
             }

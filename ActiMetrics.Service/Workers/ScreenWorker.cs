@@ -17,19 +17,34 @@ namespace ActiMetrics.Service.Workers
             _syncService = syncService;
         }
 
+        private static readonly TimeSpan ScreenshotInterval = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan AppUsageInterval  = TimeSpan.FromMinutes(3);
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            var lastScreenshot = DateTime.MinValue;
+            var lastFlush      = DateTime.Now;
+
             while (!stoppingToken.IsCancellationRequested)
             {
+                var now = DateTime.Now;
+
                 _appTrackerService.Tick();
 
-                var files = await _screenshotService.TickAsync();
-                Console.WriteLine(files);
-                if (files is not null)
+                if (now - lastFlush >= AppUsageInterval)
+                {
                     await _appTrackerService.FlushIntervalAsync();
+                    lastFlush = now;
+                }
 
-                await _syncService.SyncScreenshotAsync();
-                await Task.Delay(30000, stoppingToken);
+                if (now - lastScreenshot >= ScreenshotInterval)
+                {
+                    await _screenshotService.TickAsync();
+                    await _syncService.SyncScreenshotAsync();
+                    lastScreenshot = now;
+                }
+
+                await Task.Delay(1000, stoppingToken);
             }
         }
     }

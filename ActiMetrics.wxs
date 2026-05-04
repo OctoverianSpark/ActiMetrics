@@ -11,27 +11,11 @@
     <MajorUpgrade DowngradeErrorMessage="Ya existe una versión más nueva instalada." />
     <MediaTemplate EmbedCab="yes" />
 
-    <CustomAction Id="InstallService"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="check"
-                  FileRef="HostExe"
-                  ExeCommand="--install" />
-
-    <CustomAction Id="UninstallService"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="ignore"
-                  FileRef="HostExe"
-                  ExeCommand="--uninstall" />
     <InstallExecuteSequence>
-      <Custom Action="InstallService" After="InstallFiles" Condition="NOT Installed AND NOT REMOVE" />
-      <Custom Action="UninstallService" Before="RemoveFiles" Condition="REMOVE" />
     </InstallExecuteSequence>
 
     <Feature Id="ProductFeature" Title="ActiMetrics" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
-      <ComponentRef Id="HostComponent" />
       <ComponentRef Id="StartupRegistry" />
     </Feature>
   </Package>
@@ -43,17 +27,11 @@
   </Fragment>
 
   <Fragment>
-    <Component Id="HostComponent" Directory="INSTALLFOLDER">
-      <File Id="HostExe" Source="./publish/ActiMetrics.Host.exe" KeyPath="yes" />
-    </Component>
-  </Fragment>
-
-  <Fragment>
     <Component Id="StartupRegistry" Directory="INSTALLFOLDER">
       <RegistryValue Root="HKLM"
                      Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
                      Name="ActiMetrics"
-                     Value="[INSTALLFOLDER]ActiMetrics.Host.exe"
+                     Value="[INSTALLFOLDER]ActiMetrics.exe"
                      Type="string"
                      KeyPath="yes" />
     </Component>

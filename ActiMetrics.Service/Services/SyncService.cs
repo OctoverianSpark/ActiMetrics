@@ -57,8 +57,24 @@ namespace ActiMetrics.Service.Services
                 var response = await _httpClient.PostAsync($"{_apiUrl}/tracer/screenshot", content);
 
                 if (response.IsSuccessStatusCode)
+                {
                     Console.WriteLine(response.Content);
-                await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
+                    await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
+
+                    // Delete local file after successful sync
+                    try
+                    {
+                        if (File.Exists(screenshot.FilePath))
+                        {
+                            File.Delete(screenshot.FilePath);
+                            Console.WriteLine($"[Screenshot] Local file deleted: {fileName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Screenshot] Error deleting local file {fileName}: {ex.Message}");
+                    }
+                }
             }
         }
 
@@ -154,11 +170,9 @@ namespace ActiMetrics.Service.Services
 
         public async Task<Programation?> GetTodayScheduleAsync()
         {
-            var email = _sessionRepository.GetEmail();
+            var email = _sessionRepository.GetEmail() ?? string.Empty;
             var today = GetToday();
 
-            // 1. Obtener appuser y schedules en paralelo si tienes el appuser_id cacheado
-            // Si no, primero necesitas el Id del appuser
             var appuser = await GetAppuserByEmailAsync(email);
             if (appuser is null) return null;
 

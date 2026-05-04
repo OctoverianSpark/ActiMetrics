@@ -58,7 +58,7 @@ namespace ActiMetrics.UI
 
             var http = new HttpClient();
 
-            var response = http.GetAsync($"https://tracerapi.asistentevirtualsas.com/validate_email?email={txtEmail.Text}");
+            var response = http.GetAsync($"https://actimetrics.asistentevirtualsas.com/validate_email?email={txtEmail.Text}");
 
             if (string.IsNullOrWhiteSpace(txtEmail.Text) || !txtEmail.Text.Contains("@"))
             {

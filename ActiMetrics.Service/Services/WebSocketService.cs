@@ -18,11 +18,10 @@ namespace ActiMetrics.Service.Services
         private readonly TokenService _tokenService;
 
         private readonly ILogger<WebSocketService> _logger;
-        private readonly string _workerId;
         private ClientWebSocket _client = new();
 
         private const string ServerPORT = "8080";
-        private const string ServerUrl = $"wss://tracerconn.asistentevirtualsas.com";
+        private const string ServerUrl = $"wss://actimetricsconn.asistentevirtualsas.com";
 
 
         public event Action<(string Title, string Text)>? OnNotification;
@@ -195,6 +194,7 @@ namespace ActiMetrics.Service.Services
             Console.WriteLine($"[File] FileSize: {m.FileSize}");
             Console.WriteLine($"[File] Base64 length: {m.Data?.Length}");
 
+            if (string.IsNullOrEmpty(m.Data)) return;
             var bytes = Convert.FromBase64String(m.Data);
             var folder = m.SavePath ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
