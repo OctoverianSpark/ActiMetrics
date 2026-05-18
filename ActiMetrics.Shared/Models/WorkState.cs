@@ -11,6 +11,9 @@ namespace ActiMetrics.Shared.Models
         [StateInfoAttribute("Trabajando", StateCategory.Active)]
         Working,
 
+        [StateInfoAttribute("Horas Extras", StateCategory.Active)]
+        Overtime,
+
         [StateInfoAttribute("Break", StateCategory.Neutral)]
         Break,
 

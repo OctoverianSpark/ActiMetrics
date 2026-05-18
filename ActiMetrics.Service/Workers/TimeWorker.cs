@@ -22,7 +22,14 @@ namespace ActiMetrics.Service.Workers
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                await _timerService.Tick();
+                try
+                {
+                    await _timerService.Tick();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[TimeWorker] Error en Tick");
+                }
                 await Task.Delay(1000, stoppingToken);
             }
         }

@@ -8,10 +8,11 @@ public class Session
 
     public Session()
     {
-        _folder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Tracer"
-        );
+        var localAppData =
+            Environment.GetEnvironmentVariable("LOCALAPPDATA") ??
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        _folder = Path.Combine(localAppData, "Tracer");
         _file = Path.Combine(_folder, "sessionUser.json");
         Directory.CreateDirectory(_folder);
 

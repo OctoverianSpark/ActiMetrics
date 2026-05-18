@@ -1,4 +1,6 @@
-﻿using ActiMetrics.Data;
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
+using ActiMetrics.Data;
 using ActiMetrics.Shared;
 using ActiMetrics.Shared.Models;
 
@@ -21,6 +23,30 @@ namespace ActiMetrics.Service.Services
 
         public bool IsReady => _isReady;
 
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int wtsInfoClass, out IntPtr ppBuffer, out uint pBytesReturned);
+
+        [DllImport("wtsapi32.dll")]
+        private static extern void WTSFreeMemory(IntPtr pMemory);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint WTSGetActiveConsoleSessionId();
+
+        private static string GetActualUserName()
+        {
+            try
+            {
+                var sessionId = (int)WTSGetActiveConsoleSessionId();
+                if (WTSQuerySessionInformation(IntPtr.Zero, sessionId, 5 /* WTSUserName */, out var buffer, out _))
+                {
+                    try { return Marshal.PtrToStringUni(buffer) ?? Environment.UserName; }
+                    finally { WTSFreeMemory(buffer); }
+                }
+            }
+            catch { }
+            return Environment.UserName;
+        }
+
         public void SetTrayService(ITrayService trayService)
         {
             _trayService = trayService;
@@ -32,7 +58,7 @@ namespace ActiMetrics.Service.Services
             _activityService = activityService;
             _syncService = syncService;
             _workerId = Environment.MachineName;
-            _workerUserName = Environment.UserName;
+            _workerUserName = GetActualUserName();
         }
 
         public async Task InitializeAsync()
@@ -65,15 +91,7 @@ namespace ActiMetrics.Service.Services
         {
             var now = TimeOnly.FromDateTime(DateTime.Now);
             var startDay = TimeOnly.ParseExact(programation.Start_Day, "HH:mm", null);
-            var startLunch = TimeOnly.ParseExact(programation.Start_Lunch, "HH:mm", null);
-            var endLunch = TimeOnly.ParseExact(programation.End_Lunch, "HH:mm", null);
             var gracePeriod = startDay.AddMinutes(5);
-            if (now >= startLunch && now < endLunch)
-                return (WorkState.Lunch, StateCategory.Neutral, StateType.Auto, false);
-
-            if (now >= endLunch)
-                return (WorkState.Working, StateCategory.Active, StateType.Auto, isLate: true);
-
             bool isLate = now > gracePeriod;
             return (WorkState.Working, StateCategory.Active, StateType.Auto, isLate);
         }
@@ -98,6 +116,13 @@ namespace ActiMetrics.Service.Services
             if (category is not null)
                 await LogStateAsync(category.Value, state!.Value, type!.Value);
         }
+        private bool _endDaySoonNotified = false;
+        private bool _endDayReachedNotified = false;
+        private bool _shutdownFiveMinNotified = false;
+        private bool _shutdownMinuteNotified = false;
+        private bool _isOvertimeConfirmed = false;
+        private DateTime? _shutdownAt = null;
+
         private bool _lunchSoonNotified = false;
         private Task CheckLunchSoonWarningAsync()
         {
@@ -121,6 +146,85 @@ namespace ActiMetrics.Service.Services
             }
 
             return Task.CompletedTask;
+        }
+
+        private async Task CheckEndDayAsync()
+        {
+            if (_todayProgramation is null || string.IsNullOrEmpty(_todayProgramation.End_Day)) return;
+
+            if (_currentState == WorkState.Overtime || _currentState == WorkState.Offline)
+            {
+                _shutdownAt = null;
+                _shutdownFiveMinNotified = false;
+                _shutdownMinuteNotified  = false;
+                return;
+            }
+
+            var ahora = TimeOnly.FromDateTime(DateTime.Now);
+            var endDay = TimeOnly.ParseExact(_todayProgramation.End_Day, "HH:mm", null);
+            var aviso = endDay.AddMinutes(-5);
+
+            if (ahora >= aviso && ahora < endDay && !_endDaySoonNotified)
+            {
+                _endDaySoonNotified = true;
+                _trayService?.Notify(("⚠️ Fin de jornada próximo",
+                    $"Tu jornada termina a las {_todayProgramation.End_Day}. Selecciona 'Horas Extras' en el menú si vas a quedarte."));
+                Console.WriteLine($"[Tracer] Aviso fin de jornada: {_todayProgramation.End_Day}");
+            }
+
+            if (ahora >= endDay && !_endDayReachedNotified)
+            {
+                _endDayReachedNotified = true;
+                _shutdownAt = DateTime.Now.AddMinutes(60);
+                _trayService?.NotifyWithAction(
+                    ("🔴 Jornada finalizada", "El equipo se apagará en 1 hora. Selecciona 'Horas Extras' en el menú para cancelar."),
+                    "30 minutos más",
+                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
+                Console.WriteLine("[Tracer] Jornada finalizada. Apagado programado en 60 min.");
+            }
+
+            if (_shutdownAt is null) return;
+
+            var restante = _shutdownAt.Value - DateTime.Now;
+
+            if (restante.TotalMinutes <= 5 && restante.TotalSeconds > 0 && !_shutdownFiveMinNotified)
+            {
+                _shutdownFiveMinNotified = true;
+                _trayService?.NotifyWithAction(
+                    ("⏻ Apagado próximo", "El equipo se apagará en 5 minutos. Última oportunidad para marcar 'Horas Extras'."),
+                    "30 minutos más",
+                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
+                Console.WriteLine("[Tracer] Apagado en 5 minutos.");
+            }
+
+            if (restante.TotalMinutes <= 1 && restante.TotalSeconds > 0 && !_shutdownMinuteNotified)
+            {
+                _shutdownMinuteNotified = true;
+                _trayService?.NotifyWithAction(
+                    ("⏻ Apagado inminente", "El equipo se apagará en 1 minuto. Última oportunidad para marcar 'Horas Extras'."),
+                    "30 minutos más",
+                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
+                Console.WriteLine("[Tracer] Apagado en 1 minuto.");
+            }
+
+            if (DateTime.Now >= _shutdownAt.Value)
+            {
+                Console.WriteLine("[Tracer] Iniciando apagado del sistema.");
+                _shutdownAt = null;
+                await LogStateAsync(StateCategory.Inactive, WorkState.Offline, StateType.Auto);
+                try
+                {
+                    Process.Start(new ProcessStartInfo("shutdown", "/s /t 60 /c \"ActiMetrics: Jornada laboral finalizada.\"")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Tracer] Error al iniciar apagado: {ex.Message}");
+                }
+            }
         }
 
         private bool _lunchStartNotified = false;
@@ -154,6 +258,7 @@ namespace ActiMetrics.Service.Services
 
             bool isIdle = _activityService.IsIdle();
             await HandleStateTransition(isIdle);
+            await CheckEndDayAsync();
             await CheckLunchSoonWarningAsync();
             await CheckLunchStartWarningAsync();
             var activeToday = await _repository.GetActiveTodayAsync(_workerId);
@@ -167,11 +272,26 @@ namespace ActiMetrics.Service.Services
         {
             var category = state switch
             {
-                WorkState.Working => StateCategory.Active,
+                WorkState.Working or WorkState.Overtime => StateCategory.Active,
                 WorkState.Break or WorkState.WC or WorkState.Lunch => StateCategory.Neutral,
                 WorkState.Idle => StateCategory.Inactive,
                 _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Estado no manejado")
             };
+            if (state == WorkState.Overtime)
+            {
+                _isOvertimeConfirmed = true;
+                _shutdownAt = null;
+                _shutdownFiveMinNotified = false;
+                _shutdownMinuteNotified  = false;
+            }
+            else if (_isOvertimeConfirmed)
+            {
+                _isOvertimeConfirmed = false;
+                _endDaySoonNotified    = false;
+                _endDayReachedNotified = false;
+                _shutdownFiveMinNotified = false;
+                _shutdownMinuteNotified  = false;
+            }
             await LogStateAsync(category, state, StateType.Manual);
         }
 

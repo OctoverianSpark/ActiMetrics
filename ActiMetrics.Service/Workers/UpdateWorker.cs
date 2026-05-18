@@ -1,80 +1,62 @@
+#pragma warning disable CA1848
+using Velopack;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-using Velopack;
-using Velopack.Sources;
 
 namespace ActiMetrics.Service.Workers
 {
-  public class UpdateWorker : BackgroundService
-  {
-    private readonly ILogger<UpdateWorker> _logger;
-    private readonly IConfiguration _configuration;
-
-    public UpdateWorker(ILogger<UpdateWorker> logger, IConfiguration configuration)
+    public class UpdateWorker(
+        ILogger<UpdateWorker> logger,
+        IConfiguration configuration) : BackgroundService
     {
-      _logger = logger;
-      _configuration = configuration;
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-      await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-
-      while (!stoppingToken.IsCancellationRequested)
-      {
-        await VerificarActualizacion();
-        await Task.Delay(TimeSpan.FromHours(6), stoppingToken);
-      }
-    }
-
-    private async Task VerificarActualizacion()
-    {
-      try
-      {
-        // Leer configuración de GitHub desde appsettings
-        var repoUrl = _configuration["GitHub:RepoUrl"];
-        var accessToken = _configuration["GitHub:AccessToken"];
-
-        if (string.IsNullOrEmpty(repoUrl))
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-          _logger.LogWarning("[UPDATE]: RepoUrl no configurado en appsettings.json");
-          return;
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await VerificarActualizacion(stoppingToken);
+                await Task.Delay(TimeSpan.FromHours(2), stoppingToken);
+            }
         }
 
-        _logger.LogInformation("[UPDATE]: Verificando actualizaciones en {RepoUrl}", repoUrl);
-
-        var source = new GithubSource(
-            repoUrl: repoUrl,
-            accessToken: accessToken,
-            prerelease: false
-        );
-
-        var mgr = new UpdateManager(source);
-        var update = await mgr.CheckForUpdatesAsync();
-
-        if (update is null)
+        private async Task VerificarActualizacion(CancellationToken stoppingToken)
         {
-          _logger.LogInformation("[UPDATE]: No hay nuevas versiones.");
-          return;
+            try
+            {
+                var updateUrl = configuration["UpdateUrl"];
+                if (string.IsNullOrEmpty(updateUrl))
+                {
+                    logger.LogWarning("[UPDATE] UpdateUrl no configurado.");
+                    return;
+                }
+
+                logger.LogInformation("[UPDATE] Verificando actualizaciones en {Url}", updateUrl);
+
+                var mgr = new UpdateManager(updateUrl);
+                var update = await mgr.CheckForUpdatesAsync();
+
+                if (update is null)
+                {
+                    logger.LogInformation("[UPDATE] Sin actualizaciones disponibles.");
+                    return;
+                }
+
+                logger.LogInformation("[UPDATE] Nueva versión disponible: {Version}. Descargando...",
+                    update.TargetFullRelease.Version);
+
+                await mgr.DownloadUpdatesAsync(update,
+                    p => logger.LogInformation("[UPDATE] Descargando: {Percent}%", p),
+                    stoppingToken);
+
+                logger.LogInformation("[UPDATE] Descarga completa. Aplicando actualización y reiniciando...");
+                mgr.ApplyUpdatesAndRestart(update);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[UPDATE] Error al verificar actualizaciones.");
+            }
         }
-
-        _logger.LogInformation("[UPDATE]: Nueva versión disponible: {Version}",
-            update.TargetFullRelease.Version);
-
-        await mgr.DownloadUpdatesAsync(update, progress =>
-        {
-          _logger.LogInformation("[UPDATE]: Descargando {Progress}%", progress);
-        });
-
-        _logger.LogInformation("[UPDATE]: Descarga completa, reiniciando...");
-
-        mgr.ApplyUpdatesAndRestart(update);
-      }
-      catch (Exception ex)
-      {
-        _logger.LogError(ex, "[UPDATE]: Error verificando actualizaciones.");
-      }
     }
-  }
 }

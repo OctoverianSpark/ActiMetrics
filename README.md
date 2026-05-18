@@ -1,67 +1,82 @@
-# ActiMetrics
+# ActiMetrics — Guía de usuario
 
-Sistema de monitoreo de actividad y tiempo de trabajo con capturas de pantalla automáticas.
+ActiMetrics es una aplicación de escritorio para Windows que registra tu actividad laboral durante la jornada y la sincroniza con el servidor de la empresa. Viene instalada en tu equipo y arranca automáticamente al iniciar sesión.
 
-## 🚀 Características
+Al usarla por primera vez se pedirá tu **correo corporativo** para vincular el equipo a tu perfil.
 
-- ✅ Monitoreo automático de actividad
-- ✅ Capturas de pantalla programadas
-- ✅ Sincronización con API web
-- ✅ Actualizaciones automáticas
-- ✅ **Sistema de logs local completo** 📋
-- ✅ Interfaz de bandeja del sistema
-- ✅ Instalación como servicio Windows
+---
 
-## 📋 Sistema de Logs
+## Interfaz — icono en la bandeja del sistema
 
-ActiMetrics incluye un **sistema robusto de logging local** para diagnosticar problemas sin debuggear remotamente.
+ActiMetrics vive en la barra de tareas (esquina inferior derecha). Al hacer **clic derecho** sobre el icono aparece el menú de estados.
 
-### 📁 Ubicación de Logs
+El **tooltip** del icono muestra tu estado actual y el tiempo activo acumulado en el día:
+
 ```
-ActiMetrics/
-└── logs/
-    ├── actimetrics-20260427.log    ← Log del día actual
-    ├── actimetrics-20260426.log    ← Día anterior
-    └── ...
+[Working] Activo: 05h 32m 18s
 ```
 
-### 🔍 Ver Logs
-```cmd
-# Ver log de hoy
-view-logs.bat
+---
 
-# Ver log de hace 2 días
-view-logs.bat 2
-```
+## Estados de trabajo
 
-### 📖 Documentación Completa
-Ver [LOGS_README.md](LOGS_README.md) para información detallada sobre:
-- Formato de logs
-- Niveles de logging
-- Diagnóstico de problemas
-- Configuración avanzada
+Selecciona el estado que corresponde a lo que estás haciendo en cada momento.
 
-## 🛠️ Instalación
+| Estado | Categoría | Cuándo usarlo |
+|---|---|---|
+| **Trabajando** | Activo | Tarea normal en el equipo |
+| **Horas Extras** | Activo | Continuar trabajando después del fin de jornada |
+| **Break** | Neutral | Pausa corta |
+| **Baño** | Neutral | Salida breve al baño |
+| **Almuerzo** | Neutral | Hora de almuerzo |
 
-1. Descargar el instalador desde GitHub Releases
-2. Ejecutar como administrador
-3. Seguir el asistente de instalación
+> Los estados **Idle** y **Fuera de línea** los gestiona la aplicación automáticamente y no aparecen en el menú.
 
-## 🔧 Uso
+---
 
-- La aplicación se ejecuta automáticamente al iniciar Windows
-- Icono en bandeja del sistema para control manual
-- Logs disponibles en carpeta `logs/` para diagnóstico
+## Detección automática de inactividad
 
-## 📊 Servicios Incluidos
+Si el sistema detecta que no hay actividad de ratón ni teclado, el estado cambia automáticamente a **Idle**. Al volver a usar el equipo, el estado vuelve a **Trabajando** sin que tengas que hacer nada.
 
-- **ActiMetrics.exe**: Interfaz principal y servicios en segundo plano
-- **ActiMetrics.Host.exe**: Servicio Windows (opcional)
+---
 
-## 🆘 Soporte
+## Notificaciones de jornada
 
-Para problemas técnicos:
-1. Revisar logs en carpeta `logs/`
-2. Adjuntar log del día del problema
-3. Describir pasos que causaron el error
+La aplicación muestra notificaciones emergentes en los momentos clave del día:
 
+| Momento | Aviso |
+|---|---|
+| 5 min antes del almuerzo | Recordatorio de inicio de almuerzo |
+| Inicio del almuerzo | Hora de regreso |
+| 5 min antes del fin de jornada | Aviso de cierre próximo |
+| Fin de jornada | Opción de marcar Horas Extras |
+
+Si seleccionas **Horas Extras** desde el menú o desde la notificación, la aplicación cancela el apagado programado por fin de jornada y continúa registrando.
+
+---
+
+## Crear un ticket de soporte
+
+Desde el menú de la bandeja selecciona **Crear Ticket**, rellena la categoría y descripción, y el ticket se envía directamente al sistema de helpdesk.
+
+---
+
+## Actualizaciones
+
+Las actualizaciones son automáticas. Cuando hay una nueva versión disponible, la aplicación se cierra sola, instala la actualización y vuelve a arrancar. No necesitas hacer nada.
+
+---
+
+## Preguntas frecuentes
+
+**¿Puedo cerrar la aplicación?**
+La aplicación se reinicia automáticamente si se cierra. Si necesitas detenerla por completo, contacta a TI.
+
+**¿Qué datos se recopilan?**
+Se registran los estados de trabajo, el tiempo por aplicación activa y capturas de pantalla periódicas. Todo se sincroniza con el servidor de la empresa.
+
+**¿Qué pasa si no tengo conexión a internet?**
+Los datos se guardan localmente y se sincronizan en cuanto se recupera la conexión.
+
+**El icono no aparece en la bandeja**
+Reinicia el equipo. Si el problema persiste, contacta a TI.

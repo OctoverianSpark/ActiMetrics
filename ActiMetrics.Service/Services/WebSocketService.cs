@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,77 +14,163 @@ namespace ActiMetrics.Service.Services
 {
     public class WebSocketService
     {
-        private readonly ScreenshotService _screenshotService;
         private readonly TokenService _tokenService;
-
         private readonly ILogger<WebSocketService> _logger;
         private ClientWebSocket _client = new();
 
-        private const string ServerPORT = "8080";
-        private const string ServerUrl = $"wss://actimetricsconn.asistentevirtualsas.com";
-
+        private const string ServerUrl = "wss://actimetricsconn.asistentevirtualsas.com";
 
         public event Action<(string Title, string Text)>? OnNotification;
         public event Action? OnRestart;
 
-        public WebSocketService(ScreenshotService screenshotService, TokenService tokenService, ILogger<WebSocketService> logger)
+        private CancellationTokenSource? _sessionCts;
+        private DateTime _lastReconnectTrigger = DateTime.MinValue;
+
+        public WebSocketService(TokenService tokenService, ILogger<WebSocketService> logger)
         {
-            _screenshotService = screenshotService;
             _tokenService = tokenService;
             _logger = logger;
-
         }
-
 
         public async Task StartAsync(CancellationToken stoppingToken)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+            System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+
+            int consecutiveFails = 0;
+            bool loggedNoInternet = false;
+
+            try
             {
-                try
+                while (!stoppingToken.IsCancellationRequested)
                 {
-                    var token = await _tokenService.GenerateTokenAsync();
-                    _client = new ClientWebSocket();
-                    await _client.ConnectAsync(new Uri($"{ServerUrl}?token={token}"), stoppingToken);
-                    _logger.LogInformation("[Tracer] WebSocket connected");
-                    await ReceiveLoopAsync(stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    _logger.LogInformation("[Tracer] WebSocket shutdown requested.");
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[WebSocket] Connection error: {ex.Message}");
-                    _logger.LogError(ex, "WebSocket connection error");
+                    using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    _sessionCts = sessionCts;
+
                     try
                     {
-                        await Task.Delay(5000, stoppingToken); // Espera antes de reconectar
+                        // ── 1. Verificar conectividad antes de intentar ──────────────────────
+                        if (!await HasInternetAsync(sessionCts.Token))
+                        {
+                            if (!loggedNoInternet)
+                            {
+                                _logger.LogWarning("[WS] Sin conexión a internet, esperando para reconectar...");
+                                loggedNoInternet = true;
+                            }
+                            await Task.Delay(5000, sessionCts.Token);
+                            continue;
+                        }
+
+                        if (loggedNoInternet)
+                        {
+                            _logger.LogInformation("[WS] Conexión a internet restaurada, iniciando WebSocket");
+                            loggedNoInternet = false;
+                            consecutiveFails = 0;
+                        }
+
+                        // ── 2. Generar token y conectar ──────────────────────────────────────
+                        _logger.LogInformation("[WS] Generando token JWT (intento #{N})...", consecutiveFails + 1);
+                        var token = await _tokenService.GenerateTokenAsync(sessionCts.Token);
+
+                        _client = new ClientWebSocket();
+                        _logger.LogInformation("[WS] Conectando a {Url}...", ServerUrl);
+                        await _client.ConnectAsync(new Uri($"{ServerUrl}?token={token}"), sessionCts.Token);
+
+                        consecutiveFails = 0;
+                        _logger.LogInformation("[WS] Conexión WebSocket establecida exitosamente");
+
+                        await ReceiveLoopAsync(sessionCts.Token);
+
+                        _logger.LogInformation("[WS] Desconectado del servidor, reconectando...");
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("[WS] Apagado solicitado, cerrando WebSocket");
+                        break;
                     }
                     catch (OperationCanceledException)
                     {
-                        break;
+                        // Cancelado por ForceReconnect (wake / cambio de red)
+                        _logger.LogInformation("[WS] Reconexión forzada por cambio de red o wake, reintentando en 1.5s...");
+                        try { await Task.Delay(1500, stoppingToken); } catch { break; }
                     }
-                }
-                finally
-                {
-                    if (_client is not null && (_client.State == WebSocketState.Open || _client.State == WebSocketState.CloseReceived))
+                    catch (Exception ex)
                     {
-                        try
+                        consecutiveFails++;
+                        var delaySec = Math.Min(5 * consecutiveFails, 60);
+                        _logger.LogError(ex, "[WS] Error de conexión (intento #{N}), reintentando en {D}s", consecutiveFails, delaySec);
+                        try { await Task.Delay(TimeSpan.FromSeconds(delaySec), sessionCts.Token); }
+                        catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested) { } // red recuperada → reintentar
+                        catch (OperationCanceledException) { break; }
+                    }
+                    finally
+                    {
+                        // CloseAsync con timeout de 3s para no colgar si la red está caída
+                        if (_client?.State == WebSocketState.Open || _client?.State == WebSocketState.CloseReceived)
                         {
-                            await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutting down", CancellationToken.None);
+                            using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                            try { await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutting down", closeCts.Token); }
+                            catch { }
                         }
-                        catch
-                        {
-                            // Ignore cleanup failures.
-                        }
+                        _client?.Dispose();
                     }
                 }
             }
+            finally
+            {
+                Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+                System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+                System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+            }
         }
 
+        // TCP a Google DNS en 3s — no requiere permisos especiales ni ICMP
+        private static async Task<bool> HasInternetAsync(CancellationToken ct)
+        {
+            try
+            {
+                using var timeoutCts = new CancellationTokenSource(3000);
+                using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53), combined.Token);
+                return true;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // Propagar cancelación externa
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
+        private void ForceReconnect(string reason)
+        {
+            if ((DateTime.Now - _lastReconnectTrigger).TotalSeconds < 5) return;
+            _lastReconnectTrigger = DateTime.Now;
+            _logger.LogInformation("[WS] {Reason} — forzando reconexión WebSocket", reason);
+            try { _client?.Abort(); } catch { }
+            try { _sessionCts?.Cancel(); } catch (ObjectDisposedException) { }
+        }
 
+        private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+                ForceReconnect("Sistema despertó de suspensión");
+        }
+
+        private void OnNetworkAvailabilityChanged(object? sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
+        {
+            _logger.LogInformation("[WS] Red disponible: {Available}", e.IsAvailable);
+            if (e.IsAvailable) ForceReconnect("Red disponible");
+        }
+
+        private void OnNetworkAddressChanged(object? sender, EventArgs e)
+        {
+            ForceReconnect("Dirección de red cambió");
+        }
 
         private async Task ReceiveLoopAsync(CancellationToken stoppingToken)
         {
@@ -97,7 +183,6 @@ namespace ActiMetrics.Service.Services
 
                 try
                 {
-                    // Acumula fragmentos hasta EndOfMessage
                     do
                     {
                         result = await _client.ReceiveAsync(buffer, stoppingToken);
@@ -107,27 +192,29 @@ namespace ActiMetrics.Service.Services
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("[Tracer] WebSocket receive loop canceled.");
+                    _logger.LogInformation("[WS] Receive loop cancelado por apagado");
                     break;
                 }
                 catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
-                    _logger.LogInformation("[Tracer] WebSocket receive loop canceled by token.");
+                    _logger.LogInformation("[WS] Receive loop cancelado por token");
                     break;
                 }
                 catch (TaskCanceledException ex)
                 {
-                    _logger.LogWarning(ex, "[Tracer] WebSocket receive task canceled unexpectedly.");
+                    _logger.LogWarning(ex, "[WS] Receive task cancelado inesperadamente");
                     break;
                 }
                 catch (WebSocketException ex)
                 {
-                    _logger.LogWarning(ex, "[Tracer] WebSocket receive failure.");
+                    _logger.LogWarning(ex, "[WS] Error en receive, reconectando...");
                     break;
                 }
 
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
+                    _logger.LogInformation("[WS] Servidor cerró la conexión: {Status} {Desc}",
+                        _client.CloseStatus, _client.CloseStatusDescription);
                     await _client.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
                     break;
                 }
@@ -149,50 +236,50 @@ namespace ActiMetrics.Service.Services
             };
 
             var message = JsonSerializer.Deserialize<WsMessage>(json, options);
-            _logger.LogInformation($"[Tracer] Received message: {message}");
+            _logger.LogDebug("[WS] Mensaje recibido: {Type}", message?.GetType().Name ?? "null");
 
             if (message is null) return;
 
             await (message switch
             {
-                WsActionMessage m => HandleActionAsync(m),
-                WsFileMessage m => HandleFileAsync(m),
+                WsActionMessage m      => HandleActionAsync(m),
+                WsFileMessage m        => HandleFileAsync(m),
                 WsNotificationMessage m => HandleNotificationAsync(m),
-                _ => Task.CompletedTask
+                _                      => Task.CompletedTask
             });
         }
+
         private async Task HandleActionAsync(WsActionMessage m)
         {
-
+            _logger.LogInformation("[WS] Acción recibida: {Action}", m.Action);
             await (m.Action switch
             {
-                WsActionType.Lock => Task.Run(() => LockWorkStation()),
-                WsActionType.Restart => Task.Run(() => Process.Start("shutdown", "/r /t 0")),
-                WsActionType.Shutdown => Task.Run(() => Process.Start("shutdown", "/s /t 0")),
-                WsActionType.Logoff => Task.Run(() => Process.Start("shutdown", "/l")),
-
-                WsActionType.Sync => SyncAsync(),
+                WsActionType.Lock       => Task.Run(() => LockWorkStation()),
+                WsActionType.Restart    => Task.Run(() => Process.Start("shutdown", "/r /t 0")),
+                WsActionType.Shutdown   => Task.Run(() => Process.Start("shutdown", "/s /t 0")),
+                WsActionType.Logoff     => Task.Run(() => Process.Start("shutdown", "/l")),
+                WsActionType.Sync       => SyncAsync(),
                 WsActionType.RestartApp => Task.Run(() => OnRestart?.Invoke()),
-                _ => Task.CompletedTask
+                _                       => Task.CompletedTask
             });
         }
 
         private Task SyncAsync()
         {
-            // Por ahora fuerza el flush del intervalo de apps
-            Console.WriteLine("[Sync] Forzando sync...");
+            _logger.LogInformation("[WS] Sync solicitado por servidor");
             return Task.CompletedTask;
         }
+
         private Task HandleNotificationAsync(WsNotificationMessage m)
         {
+            _logger.LogInformation("[WS] Notificación: {Title} — {Text}", m.Title, m.Text);
             OnNotification?.Invoke((m.Title, m.Text));
             return Task.CompletedTask;
         }
+
         private async Task HandleFileAsync(WsFileMessage m)
         {
-            Console.WriteLine($"[File] FileName: {m.FileName}");
-            Console.WriteLine($"[File] FileSize: {m.FileSize}");
-            Console.WriteLine($"[File] Base64 length: {m.Data?.Length}");
+            _logger.LogInformation("[WS] Archivo recibido: {Name} ({Size} bytes)", m.FileName, m.FileSize);
 
             if (string.IsNullOrEmpty(m.Data)) return;
             var bytes = Convert.FromBase64String(m.Data);
@@ -204,10 +291,8 @@ namespace ActiMetrics.Service.Services
             var filePath = Path.Combine(folder, m.FileName);
             await File.WriteAllBytesAsync(filePath, bytes);
 
-            _logger.LogInformation("[File] Guardado → {path}", filePath);
+            _logger.LogInformation("[WS] Archivo guardado → {Path}", filePath);
             OnNotification?.Invoke(("Archivo recibido", m.FileName));
         }
-
-
     }
 }

@@ -3,4 +3,5 @@
   <Project Path="ActiMetrics.Shared/ActiMetrics.Shared.csproj" Id="4813cd31-e890-4f94-84a8-2a2aea137cf7" />
   <Project Path="ActiMetrics.UI/ActiMetrics.UI.csproj" Id="91aa4ee9-d561-4143-a5ea-86a9838b45bf" />
   <Project Path="ActiMetrics.Service/ActiMetrics.Service.csproj" />
+  <Project Path="ActiMetrics.Host/ActiMetrics.Host.csproj" />
 </Solution>

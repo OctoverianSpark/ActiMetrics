@@ -1,5 +1,5 @@
-﻿using System.Net.Http;
-using System.Reflection.Metadata;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using ActiMetrics.Data;
@@ -12,26 +12,37 @@ namespace ActiMetrics.Service.Services
     {
         private readonly StateRepository _stateRepository;
         private readonly AppUsageRepository _appUsageRepository;
-
-        private readonly Session _sessionRepository;
         private readonly ScreenshotRepository _screenshotRepository;
+        private readonly Session _sessionRepository;
+        private readonly ILogger<SyncService> _logger;
         private readonly HttpClient _httpClient;
         private readonly string _apiUrl;
+        private readonly string _ticketsUrl;
         private readonly string _workerId;
         private readonly string _workerUserName;
-        private readonly string _ticketsUrl;
-        public SyncService(StateRepository stateRepository, AppUsageRepository appUsageRepository, ScreenshotRepository screenshotRepository, Session sessionRepository)
+
+        private static readonly JsonSerializerOptions _jsonOptions = new()
         {
-            _stateRepository = stateRepository;
+            PropertyNameCaseInsensitive = true
+        };
+
+        public SyncService(
+            StateRepository stateRepository,
+            AppUsageRepository appUsageRepository,
+            ScreenshotRepository screenshotRepository,
+            Session sessionRepository,
+            ILogger<SyncService> logger)
+        {
+            _stateRepository    = stateRepository;
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
-            _sessionRepository = sessionRepository;
-            _httpClient = new HttpClient();
-            _apiUrl = "https://actimetrics.asistentevirtualsas.com";
-
-            _ticketsUrl = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
-            _workerId = Environment.MachineName;
-            _workerUserName = Environment.UserName;
+            _sessionRepository  = sessionRepository;
+            _logger             = logger;
+            _httpClient         = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            _apiUrl             = "https://actimetrics.asistentevirtualsas.com";
+            _ticketsUrl         = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
+            _workerId           = Environment.MachineName;
+            _workerUserName     = Environment.UserName;
         }
 
         public async Task SyncAsync()
@@ -39,96 +50,121 @@ namespace ActiMetrics.Service.Services
             await SyncStatesAsync();
             await SyncAppUsageAsync();
         }
+
         public async Task SyncScreenshotAsync()
         {
-
-
             var screenshots = await _screenshotRepository.GetUnsyncedAsync();
+            if (!screenshots.Any()) return;
 
-            foreach (Screenshot screenshot in screenshots)
+            _logger.LogInformation("[API] Sincronizando {N} screenshots...", screenshots.Count());
+
+            foreach (var screenshot in screenshots)
             {
-                using var content = new MultipartFormDataContent();
-                var fileStream = File.OpenRead(screenshot.FilePath);
                 var fileName = Path.GetFileName(screenshot.FilePath);
-                var fileContent = new StreamContent(fileStream);
-                content.Add(fileContent, "file", fileName);
-                content.Add(new StringContent(Environment.MachineName), "machine");
-
-                var response = await _httpClient.PostAsync($"{_apiUrl}/tracer/screenshot", content);
-
-                if (response.IsSuccessStatusCode)
+                try
                 {
-                    Console.WriteLine(response.Content);
-                    await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
+                    var sw  = Stopwatch.StartNew();
+                    var url = $"{_apiUrl}/tracer/screenshot";
+                    HttpResponseMessage response;
 
-                    // Delete local file after successful sync
-                    try
+                    using (var content = new MultipartFormDataContent())
+                    using (var fileStream = File.OpenRead(screenshot.FilePath))
                     {
-                        if (File.Exists(screenshot.FilePath))
+                        content.Add(new StreamContent(fileStream), "file", fileName);
+                        content.Add(new StringContent(Environment.MachineName), "machine");
+                        response = await _httpClient.PostAsync(url, content);
+                    }
+
+                    sw.Stop();
+                    _logger.LogInformation("[API] POST {Url} → {Status} ({Ms}ms)", url, response.StatusCode, sw.ElapsedMilliseconds);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        await _screenshotRepository.MarkSyncedAsync(screenshot.Id);
+                        try
                         {
-                            File.Delete(screenshot.FilePath);
-                            Console.WriteLine($"[Screenshot] Local file deleted: {fileName}");
+                            if (File.Exists(screenshot.FilePath))
+                            {
+                                File.Delete(screenshot.FilePath);
+                                _logger.LogDebug("[Screenshot] Archivo local eliminado: {File}", fileName);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "[Screenshot] Error al eliminar archivo local {File}", fileName);
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Console.WriteLine($"[Screenshot] Error deleting local file {fileName}: {ex.Message}");
+                        var body = await response.Content.ReadAsStringAsync();
+                        _logger.LogWarning("[API] Screenshot {File} rechazado: {Status} — {Body}", fileName, response.StatusCode, body);
                     }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[API] Excepción al sincronizar screenshot {File}", fileName);
                 }
             }
         }
 
-
         public async Task<HttpResponseMessage> SaveTicketAsync(string category, string description)
         {
-            string username = Environment.UserName;           // "jean.pr"
             string displayName = System.DirectoryServices.AccountManagement
                                    .UserPrincipal.Current.DisplayName;
             var data = new
             {
-                categoria = category,
+                categoria  = category,
                 descripcion = description,
-                usuario = displayName
+                usuario    = displayName
             };
 
             var content = new StringContent(
                 JsonSerializer.Serialize(data),
                 Encoding.UTF8,
-                "application/json"
-            );
+                "application/json");
 
-
+            _logger.LogInformation("[API] POST {Url} — Ticket: {Cat}", _ticketsUrl, category);
+            var sw       = Stopwatch.StartNew();
             var response = await _httpClient.PostAsync(_ticketsUrl, content);
+            sw.Stop();
+            _logger.LogInformation("[API] Ticket → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
+
             return response.EnsureSuccessStatusCode();
         }
-
 
         private async Task SyncStatesAsync()
         {
             var pending = await _stateRepository.GetUnsyncedAsync();
             if (!pending.Any()) return;
 
+            var url = $"{_apiUrl}/tracer/states";
+            _logger.LogInformation("[API] POST {Url} — {N} estados pendientes", url, pending.Count());
             try
             {
-                var json = JsonSerializer.Serialize(pending);
+                var json    = JsonSerializer.Serialize(pending);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync($"{_apiUrl}/tracer/states", content);
+                var sw      = Stopwatch.StartNew();
+                var response = await _httpClient.PostAsync(url, content);
+                sw.Stop();
+
+                _logger.LogInformation("[API] States → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
 
                 if (response.IsSuccessStatusCode)
                 {
                     foreach (var log in pending)
                         await _stateRepository.MarkSyncedAsync(log.Id);
 
-                    Console.WriteLine($"[Sync] {pending.Count()} estados sincronizados");
+                    _logger.LogInformation("[Sync] {N} estados sincronizados", pending.Count());
                 }
                 else
                 {
-                    Console.WriteLine($"[Sync] Error estados: {response.StatusCode}");
+                    var body = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("[Sync] Error al sincronizar estados: {Status} — {Body}", response.StatusCode, body);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Sync] Excepción estados: {ex.Message}");
+                _logger.LogError(ex, "[Sync] Excepción al sincronizar estados");
             }
         }
 
@@ -137,85 +173,101 @@ namespace ActiMetrics.Service.Services
             var pending = await _appUsageRepository.GetUnsyncedAsync();
             if (!pending.Any()) return;
 
+            var url = $"{_apiUrl}/tracer/app-usage";
+            _logger.LogInformation("[API] POST {Url} — {N} registros de uso pendientes", url, pending.Count());
             try
             {
-                var json = JsonSerializer.Serialize(pending);
+                var json    = JsonSerializer.Serialize(pending);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync($"{_apiUrl}/tracer/app-usage", content);
+                var sw      = Stopwatch.StartNew();
+                var response = await _httpClient.PostAsync(url, content);
+                sw.Stop();
+
+                _logger.LogInformation("[API] AppUsage → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
 
                 if (response.IsSuccessStatusCode)
                 {
                     foreach (var log in pending)
                         await _appUsageRepository.MarkSyncedAsync(log.Id);
 
-                    Console.WriteLine($"[Sync] {pending.Count()} app usage sincronizados");
+                    _logger.LogInformation("[Sync] {N} registros de uso sincronizados", pending.Count());
                 }
                 else
                 {
-                    Console.WriteLine($"[Sync] Error app usage: {response.StatusCode}");
+                    var body = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("[Sync] Error al sincronizar app usage: {Status} — {Body}", response.StatusCode, body);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Sync] Excepción app usage: {ex.Message}");
+                _logger.LogError(ex, "[Sync] Excepción al sincronizar app usage");
             }
         }
-
-
-        // Fuera de la clase, estático para reutilizar
-        private static readonly JsonSerializerOptions _jsonOptions = new()
-        {
-            PropertyNameCaseInsensitive = true
-        };
 
         public async Task<Programation?> GetTodayScheduleAsync()
         {
             var email = _sessionRepository.GetEmail() ?? string.Empty;
             var today = GetToday();
 
-            var appuser = await GetAppuserByEmailAsync(email);
-            if (appuser is null) return null;
+            _logger.LogInformation("[API] Consultando programación del día {Day} para {Email}", today, email);
 
-            // 2. Buscar schedule del día
-            var schedule = await GetScheduleForDayAsync(appuser.Id, today);
-            if (schedule is null)
+            var appuser = await GetAppuserByEmailAsync(email);
+            if (appuser is null)
             {
-                Console.WriteLine($"[Sync] Sin programación para el día {today}");
+                _logger.LogWarning("[API] No se encontró appuser para {Email}", email);
                 return null;
             }
 
-            // 3. Obtener programation
+            var schedule = await GetScheduleForDayAsync(appuser.Id, today);
+            if (schedule is null)
+            {
+                _logger.LogInformation("[Sync] Sin programación para el día {Day}", today);
+                return null;
+            }
+
             return await GetProgramationAsync(schedule.Programation_Id);
         }
 
-        // Métodos privados pequeños y reutilizables
         private async Task<AppUser?> GetAppuserByEmailAsync(string email)
         {
-            Console.WriteLine($"[Sync] Buscando appuser por email: {email}");
-            var res = await _httpClient.GetAsync($"{_apiUrl}/appuser/findbyemail?email={email}").ConfigureAwait(false);
+            var url = $"{_apiUrl}/appuser/findbyemail?email={email}";
+            _logger.LogDebug("[API] GET {Url}", url);
+            var sw  = Stopwatch.StartNew();
+            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            sw.Stop();
+            _logger.LogInformation("[API] GetAppuser → {Status} ({Ms}ms)", res.StatusCode, sw.ElapsedMilliseconds);
 
-            Console.WriteLine($"[DEBUG] StatusCode: {res.StatusCode}");
-            Console.WriteLine($"[DEBUG] Body: {await res.Content.ReadAsStringAsync()}");
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<AppUser>(json, _jsonOptions);
         }
 
-        private async Task<Schedule?> GetScheduleForDayAsync(int user_id, Days today)
+        private async Task<Schedule?> GetScheduleForDayAsync(int userId, Days today)
         {
-            Console.WriteLine(user_id.ToString(), today);
-            var res = await _httpClient.GetAsync($"{_apiUrl}/schedules?appuser_id={user_id}").ConfigureAwait(false);
+            var url = $"{_apiUrl}/schedules?appuser_id={userId}";
+            _logger.LogDebug("[API] GET {Url}", url);
+            var sw  = Stopwatch.StartNew();
+            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            sw.Stop();
+            _logger.LogInformation("[API] GetSchedule userId={Id} → {Status} ({Ms}ms)", userId, res.StatusCode, sw.ElapsedMilliseconds);
+
             if (!res.IsSuccessStatusCode) return null;
 
-            var json = await res.Content.ReadAsStringAsync();
+            var json      = await res.Content.ReadAsStringAsync();
             var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, _jsonOptions);
             return schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
         }
 
         private async Task<Programation?> GetProgramationAsync(int programationId)
         {
-            var res = await _httpClient.GetAsync($"{_apiUrl}/programations/{programationId}").ConfigureAwait(false);
+            var url = $"{_apiUrl}/programations/{programationId}";
+            _logger.LogDebug("[API] GET {Url}", url);
+            var sw  = Stopwatch.StartNew();
+            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            sw.Stop();
+            _logger.LogInformation("[API] GetProgramation id={Id} → {Status} ({Ms}ms)", programationId, res.StatusCode, sw.ElapsedMilliseconds);
+
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();
@@ -224,15 +276,14 @@ namespace ActiMetrics.Service.Services
 
         private static Days GetToday() => DateTime.Now.DayOfWeek switch
         {
-            DayOfWeek.Monday => Days.L,
-            DayOfWeek.Tuesday => Days.M,
+            DayOfWeek.Monday    => Days.L,
+            DayOfWeek.Tuesday   => Days.M,
             DayOfWeek.Wednesday => Days.X,
-            DayOfWeek.Thursday => Days.J,
-            DayOfWeek.Friday => Days.V,
-            DayOfWeek.Saturday => Days.S,
-            DayOfWeek.Sunday => Days.D,
-            _ => throw new ArgumentOutOfRangeException()
+            DayOfWeek.Thursday  => Days.J,
+            DayOfWeek.Friday    => Days.V,
+            DayOfWeek.Saturday  => Days.S,
+            DayOfWeek.Sunday    => Days.D,
+            _                   => throw new ArgumentOutOfRangeException()
         };
-
     }
 }

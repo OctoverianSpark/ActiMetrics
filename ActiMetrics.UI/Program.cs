@@ -26,13 +26,52 @@ namespace ActiMetrics.UI
         [STAThread]
         static async Task Main(string[] args)
         {
+            // --checkInstall lo pasa el instalador como hook de verificación; salir OK antes que Velopack lo vea
+            if (args.Contains("--checkInstall"))
+            {
+                StartupManager.HabilitarInicio(false);
+
+                var self = Process.GetCurrentProcess();
+                foreach (var p in Process.GetProcessesByName("ActiMetrics"))
+                {
+                    if (p.Id == self.Id) continue;
+                    p.CloseMainWindow();
+                    if (!p.WaitForExit(3000))
+                        p.Kill();
+                }
+
+                return;
+            }
+
+            // Velopack PRIMERO: intercepta hooks de install/uninstall y sale antes de hacer nada más
+            VelopackApp.Build()
+                .OnAfterInstallFastCallback(v =>
+                {
+                    StartupManager.HabilitarInicio(true);
+                })
+                .OnAfterUpdateFastCallback(v =>
+                {
+                    StartupManager.HabilitarInicio(true);
+                })
+                .OnBeforeUninstallFastCallback(v =>
+                {
+                    StartupManager.HabilitarInicio(false);
+                })
+                .Run();
+
+            // Garantiza una única instancia; Task Scheduler puede intentar reiniciar
+            // mientras la app todavía está corriendo → salir silenciosamente en ese caso
+            using var mutex = new Mutex(true, "Global\\ActiMetrics_SingleInstance", out bool isNewInstance);
+            if (!isNewInstance)
+                return;
+
             // Configurar Serilog
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                 .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
                 .WriteTo.File(
-                    path: Path.Combine(AppContext.BaseDirectory, "logs", "actimetrics-.log"),
+                    path: Path.Combine(AppContext.BaseDirectory, "logs", "app", "actimetrics-.log"),
                     rollingInterval: RollingInterval.Day,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
@@ -50,11 +89,6 @@ namespace ActiMetrics.UI
             {
                 Log.Information("Iniciando ActiMetrics...");
 
-                VelopackApp.Build()
-                    .OnBeforeUninstallFastCallback(v => StartupManager.HabilitarInicio(false))
-                    .Run();
-
-                // Registrar arranque con Windows si aún no está habilitado
                 if (!StartupManager.EstaHabilitado())
                     StartupManager.HabilitarInicio(true);
 
@@ -72,7 +106,7 @@ namespace ActiMetrics.UI
                 var uiContext = new WindowsFormsSynchronizationContext();
                 SynchronizationContext.SetSynchronizationContext(uiContext);
                 var host = Host.CreateDefaultBuilder(args)
-                    .UseSerilog() // Usar Serilog en lugar del logging por defecto
+                    .UseSerilog()
                     .ConfigureAppConfiguration((context, config) =>
                     {
                         config.SetBasePath(AppContext.BaseDirectory)
@@ -139,6 +173,10 @@ namespace ActiMetrics.UI
                 var cts = new CancellationTokenSource();
 
                 _ = host.RunAsync(cts.Token);
+
+                // Cierre iniciado por UpdateWorker (instalador de actualización)
+                host.Services.GetRequiredService<IHostApplicationLifetime>()
+                    .ApplicationStopping.Register(() => uiContext.Post(_ => Application.Exit(), null));
 
                 // Application.Run() bloquea aquí hasta que se llame Application.Exit()
                 Application.Run();

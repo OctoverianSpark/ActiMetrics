@@ -9,5 +9,7 @@ namespace ActiMetrics.Shared
         void UpdateTooltip(string text);
 
         void Notify((string Title, string Text) tuple);
+
+        void NotifyWithAction((string Title, string Text) tuple, string actionLabel, Action onAction);
     }
 }

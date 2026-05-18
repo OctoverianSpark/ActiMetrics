@@ -1,15 +1,16 @@
-﻿// Tracer.Service/Services/AppTrackerService.cs
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using ActiMetrics.Data;
+using Microsoft.Extensions.Logging;
 
 namespace ActiMetrics.Service.Services
 {
     public class AppTrackerService
     {
         private readonly AppUsageRepository _repository;
+        private readonly ILogger<AppTrackerService> _logger;
         private readonly string _workerId;
         private readonly string _workerUserName;
 
@@ -38,7 +39,6 @@ namespace ActiMetrics.Service.Services
             ["iexplore"] = "Internet Explorer",
         };
 
-        // Sufijos que cada navegador añade al final del título de la ventana
         private static readonly Dictionary<string, string[]> BrowserSuffixes = new(StringComparer.OrdinalIgnoreCase)
         {
             ["chrome"]   = [" - Google Chrome"],
@@ -50,11 +50,36 @@ namespace ActiMetrics.Service.Services
             ["iexplore"] = [" - Windows Internet Explorer", " - Internet Explorer"],
         };
 
-        public AppTrackerService(AppUsageRepository repository)
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int wtsInfoClass, out IntPtr ppBuffer, out uint pBytesReturned);
+
+        [DllImport("wtsapi32.dll")]
+        private static extern void WTSFreeMemory(IntPtr pMemory);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint WTSGetActiveConsoleSessionId();
+
+        private static string GetActualUserName()
         {
-            _repository = repository;
-            _workerId = Environment.MachineName;
-            _workerUserName = Environment.UserName;
+            try
+            {
+                var sessionId = (int)WTSGetActiveConsoleSessionId();
+                if (WTSQuerySessionInformation(IntPtr.Zero, sessionId, 5 /* WTSUserName */, out var buffer, out _))
+                {
+                    try { return Marshal.PtrToStringUni(buffer) ?? Environment.UserName; }
+                    finally { WTSFreeMemory(buffer); }
+                }
+            }
+            catch { }
+            return Environment.UserName;
+        }
+
+        public AppTrackerService(AppUsageRepository repository, ILogger<AppTrackerService> logger)
+        {
+            _repository   = repository;
+            _logger       = logger;
+            _workerId     = Environment.MachineName;
+            _workerUserName = GetActualUserName();
         }
 
         public void Tick()
@@ -73,9 +98,9 @@ namespace ActiMetrics.Service.Services
                     _currentInterval[_lastApp] += elapsed;
                 }
 
-                _lastApp = appName;
+                _logger.LogDebug("[App] Foco → {App}", appName);
+                _lastApp      = appName;
                 _lastAppStart = now;
-                Console.WriteLine($"[App] {appName}");
             }
         }
 
@@ -99,12 +124,13 @@ namespace ActiMetrics.Service.Services
                     .ToArray();
 
                 var appsJson = JsonSerializer.Serialize(apps);
-
                 await _repository.LogIntervalAsync(_workerId, _workerUserName, _intervalStart, now, appsJson);
 
-                Console.WriteLine($"[AppUsage] Intervalo {_intervalStart:HH:mm:ss} → {now:HH:mm:ss}");
+                _logger.LogInformation("[AppUsage] Intervalo {Start:HH:mm:ss} → {End:HH:mm:ss} ({N} apps)",
+                    _intervalStart, now, apps.Length);
+
                 foreach (var a in apps)
-                    Console.WriteLine($"  {a.app} → {TimeSpan.FromSeconds(a.seconds):mm\\:ss}");
+                    _logger.LogDebug("[AppUsage]   {App} → {Time}", a.app, TimeSpan.FromSeconds(a.seconds).ToString(@"mm\:ss"));
 
                 _currentInterval.Clear();
             }
@@ -120,7 +146,7 @@ namespace ActiMetrics.Service.Services
                 if (hwnd == IntPtr.Zero) return string.Empty;
 
                 GetWindowThreadProcessId(hwnd, out uint pid);
-                var process = Process.GetProcessById((int)pid);
+                var process     = Process.GetProcessById((int)pid);
                 var processName = process.ProcessName;
 
                 if (BrowserNames.TryGetValue(processName, out var browserLabel))
@@ -142,12 +168,23 @@ namespace ActiMetrics.Service.Services
                                 }
                             }
                         }
+
+                        var separators = new[] { " - ", " | ", " · ", " / " };
+                        foreach (var sep in separators)
+                        {
+                            var idx = title.LastIndexOf(sep, StringComparison.Ordinal);
+                            if (idx >= 0)
+                            {
+                                title = title[(idx + sep.Length)..].Trim();
+                                break;
+                            }
+                        }
+
                         return $"{browserLabel}: {title}";
                     }
                 }
 
-                return process.MainModule?.FileVersionInfo.ProductName
-                    ?? processName;
+                return process.MainModule?.FileVersionInfo.ProductName ?? processName;
             }
             catch
             {

@@ -10,14 +10,17 @@ public class ToastNotification : Form
     private int _targetX;
     private int _targetY;
 
-    public ToastNotification(string titulo, string mensaje, int duracionMs = 3000)
+    public ToastNotification(string titulo, string mensaje, int duracionMs = 3000,
+        string? actionLabel = null, Action? onAction = null)
     {
+        bool hasAction = actionLabel is not null && onAction is not null;
+
         this.FormBorderStyle = FormBorderStyle.None;
         this.ShowInTaskbar = false;
         this.TopMost = true;
         this.BackColor = Color.FromArgb(45, 45, 48);
         this.Width = 600;
-        this.Height = 200;
+        this.Height = hasAction ? 260 : 200;
         this.Opacity = 0;
 
         // Posición destino: centro de la pantalla
@@ -45,7 +48,7 @@ public class ToastNotification : Form
         lblTitulo.Size = new Size(560, 30);
         lblTitulo.BackColor = Color.Transparent;
 
-        // Mensaje 
+        // Mensaje
         lblMensaje = new Label();
         lblMensaje.Text = mensaje;
         lblMensaje.ForeColor = Color.FromArgb(200, 200, 200);
@@ -56,11 +59,31 @@ public class ToastNotification : Form
 
         this.Controls.AddRange(new Control[] { barra, lblTitulo, lblMensaje });
 
-        // Cerrar al hacer click
+        // Cerrar al hacer click (excepto sobre el botón de acción)
         this.Click += (s, e) => SlideOut();
         lblTitulo.Click += (s, e) => SlideOut();
         lblMensaje.Click += (s, e) => SlideOut();
         barra.Click += (s, e) => SlideOut();
+
+        if (hasAction)
+        {
+            var btn = new Button();
+            btn.Text = actionLabel;
+            btn.Font = new Font("Segoe UI", 13, FontStyle.Bold);
+            btn.ForeColor = Color.White;
+            btn.BackColor = Color.DodgerBlue;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Size = new Size(200, 42);
+            btn.Location = new Point(25, 200);
+            btn.Cursor = Cursors.Hand;
+            btn.Click += (s, e) =>
+            {
+                onAction!.Invoke();
+                SlideOut();
+            };
+            this.Controls.Add(btn);
+        }
 
         // Timer para cerrar automáticamente
         timerCierre = new System.Windows.Forms.Timer();

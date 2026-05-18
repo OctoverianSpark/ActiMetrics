@@ -1,4 +1,4 @@
-﻿
+
 using System.Drawing;
 using System.Windows.Forms;
 using ActiMetrics.Service.Services;
@@ -6,6 +6,7 @@ using ActiMetrics.Shared;
 using ActiMetrics.Shared.Extensions;
 using ActiMetrics.Shared.Models;
 using ActiMetrics.UI.Tray;
+using Microsoft.Win32;
 
 namespace ActiMetrics.UI.Tray
 {
@@ -17,6 +18,7 @@ namespace ActiMetrics.UI.Tray
         private readonly SyncService _syncService;
         private readonly SynchronizationContext _uiContext;
         private readonly ContextMenuStrip _menu;
+        private string _lastTooltip = "Tracer";
 
         public TrayService(TimerService timerService, WebSocketService socket, SyncService syncService, SynchronizationContext uiContext)
         {
@@ -38,6 +40,7 @@ namespace ActiMetrics.UI.Tray
 
             _timerService.SetTrayService(this);
             _websocketService.OnNotification += OnNotification;
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
         }
 
         private void OnNotification((string Title, string Text) tuple)
@@ -52,7 +55,6 @@ namespace ActiMetrics.UI.Tray
             }, null);
         }
 
-
         public void Notify((string Title, string Text) tuple)
         {
             _uiContext.Post(_ =>
@@ -61,6 +63,16 @@ namespace ActiMetrics.UI.Tray
                 notification.Show();
             }, null);
         }
+
+        public void NotifyWithAction((string Title, string Text) tuple, string actionLabel, Action onAction)
+        {
+            _uiContext.Post(_ =>
+            {
+                ToastNotification notification = new(tuple.Title, tuple.Text, 15000, actionLabel, onAction);
+                notification.Show();
+            }, null);
+        }
+
         private readonly Dictionary<WorkState, ToolStripMenuItem> _stateItems = new();
 
         private ContextMenuStrip BuildMenu()
@@ -74,6 +86,7 @@ namespace ActiMetrics.UI.Tray
             };
 
             var grouped = Enum.GetValues<WorkState>()
+                .Where(s => s is not WorkState.Idle and not WorkState.Offline)
                 .Select(state => (state, info: state.GetInfo()))
                 .Where(x => x.info is not null)
                 .GroupBy(x => x.info!.Category);
@@ -99,15 +112,16 @@ namespace ActiMetrics.UI.Tray
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
 
-
             UpdateMenuCheck(WorkState.Working);
             return menu;
         }
+
         public void OpenTicketForm()
         {
             var ticketForm = new Ticket(_syncService);
             ticketForm.Show();
         }
+
         public void UpdateMenuCheck(WorkState activeState)
         {
             foreach (var (state, item) in _stateItems)
@@ -116,11 +130,24 @@ namespace ActiMetrics.UI.Tray
 
         public void UpdateTooltip(string text)
         {
-            _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
+            var truncated = text.Length > 63 ? text[..63] : text;
+            _lastTooltip = truncated;
+            _uiContext.Post(_ =>
+            {
+                _notifyIcon.Text = truncated;
+            }, null);
+        }
+
+        private async void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode != PowerModes.Resume) return;
+            await Task.Delay(2000);
+            _uiContext.Post(_ => _notifyIcon.Text = _lastTooltip, null);
         }
 
         public void Dispose()
         {
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             _websocketService.OnNotification -= OnNotification;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
