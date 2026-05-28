@@ -240,6 +240,7 @@ namespace ActiMetrics.Service.Services
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(json)) return null;
             return JsonSerializer.Deserialize<AppUser>(json, _jsonOptions);
         }
 
@@ -255,6 +256,7 @@ namespace ActiMetrics.Service.Services
             if (!res.IsSuccessStatusCode) return null;
 
             var json      = await res.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(json)) return null;
             var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, _jsonOptions);
             return schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
         }
@@ -271,6 +273,7 @@ namespace ActiMetrics.Service.Services
             if (!res.IsSuccessStatusCode) return null;
 
             var json = await res.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(json)) return null;
             return JsonSerializer.Deserialize<Programation>(json, _jsonOptions);
         }
 
