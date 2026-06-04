@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -27,6 +28,16 @@ namespace ActiMetrics.Service.Services
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool QueryFullProcessImageName(IntPtr hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
 
         private static readonly Dictionary<string, string> BrowserNames = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -138,6 +149,23 @@ namespace ActiMetrics.Service.Services
             _intervalStart = now;
         }
 
+        private static string? QueryProcessPath(uint pid)
+        {
+            const uint ProcessQueryLimitedInformation = 0x1000;
+            var hProcess = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+            if (hProcess == IntPtr.Zero) return null;
+            try
+            {
+                var sb   = new StringBuilder(1024);
+                var size = sb.Capacity;
+                return QueryFullProcessImageName(hProcess, 0, sb, ref size) ? sb.ToString() : null;
+            }
+            finally
+            {
+                CloseHandle(hProcess);
+            }
+        }
+
         private string GetForegroundAppName()
         {
             try
@@ -148,6 +176,16 @@ namespace ActiMetrics.Service.Services
                 GetWindowThreadProcessId(hwnd, out uint pid);
                 var process     = Process.GetProcessById((int)pid);
                 var processName = process.ProcessName;
+
+                // Apps UWP/Store corren dentro de ApplicationFrameHost;
+                // el título de la ventana ya refleja el nombre del app real.
+                if (processName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+                {
+                    var sb = new StringBuilder(512);
+                    GetWindowText(hwnd, sb, sb.Capacity);
+                    var title = sb.ToString().Trim();
+                    return string.IsNullOrEmpty(title) ? "Windows App" : title;
+                }
 
                 if (BrowserNames.TryGetValue(processName, out var browserLabel))
                 {
@@ -184,10 +222,30 @@ namespace ActiMetrics.Service.Services
                     }
                 }
 
-                return process.MainModule?.FileVersionInfo.ProductName ?? processName;
+                // QueryFullProcessImageName funciona cross-bitness (32/64-bit)
+                // a diferencia de process.MainModule que lanza Win32Exception.
+                var exePath = QueryProcessPath(pid);
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    try
+                    {
+                        var info = FileVersionInfo.GetVersionInfo(exePath);
+                        if (!string.IsNullOrWhiteSpace(info.ProductName))
+                            return info.ProductName;
+                        return Path.GetFileNameWithoutExtension(exePath);
+                    }
+                    catch { }
+                }
+
+                // Fallback final: título de ventana → nombre de proceso
+                var titleSb = new StringBuilder(512);
+                GetWindowText(hwnd, titleSb, titleSb.Capacity);
+                var winTitle = titleSb.ToString().Trim();
+                return string.IsNullOrWhiteSpace(winTitle) ? processName : winTitle;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "[AppTracker] Error al obtener app activo");
                 return string.Empty;
             }
         }

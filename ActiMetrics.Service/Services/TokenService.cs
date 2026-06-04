@@ -102,52 +102,76 @@ namespace ActiMetrics.Service.Services
             return Environment.UserName;
         }
 
+        private static readonly string[] IpServices =
+        [
+            "https://api.ipify.org",
+            "https://checkip.amazonaws.com",
+            "https://icanhazip.com",
+            "https://api4.my-ip.io/ip",
+        ];
+
         private async Task<string> GetPublicIpAsync(CancellationToken ct = default)
         {
-            try
+            // Timeout global de 20 s; cada servicio tiene 8 s individuales
+            using var globalCts  = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var combined   = CancellationTokenSource.CreateLinkedTokenSource(ct, globalCts.Token);
+
+            var localIp = GetRealLocalIp();
+
+            HttpClient BuildClient()
             {
-                // Timeout de 10 s para no bloquear el loop de reconexión WebSocket
-                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                using var combined   = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-
-                var localIp = GetRealLocalIp();
-                HttpClient http;
-
-                if (localIp != null)
+                if (localIp == null) return new HttpClient();
+                var handler = new SocketsHttpHandler
                 {
-                    var handler = new SocketsHttpHandler
+                    ConnectCallback = async (ctx, innerCt) =>
                     {
-                        ConnectCallback = async (ctx, innerCt) =>
+                        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                        try
                         {
-                            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                             socket.Bind(new IPEndPoint(localIp, 0));
-                            await socket.ConnectAsync(ctx.DnsEndPoint, innerCt);
-                            return new NetworkStream(socket, ownsSocket: true);
                         }
-                    };
-                    http = new HttpClient(handler);
-                }
-                else
-                {
-                    http = new HttpClient();
-                }
+                        catch
+                        {
+                            // Bind fallido (cuenta de servicio sin acceso directo a la interfaz);
+                            // reconectar sin bind y dejar que el OS elija la ruta.
+                            socket.Dispose();
+                            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                        }
+                        await socket.ConnectAsync(ctx.DnsEndPoint, innerCt);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                };
+                return new HttpClient(handler);
+            }
 
-                using (http)
+            foreach (var service in IpServices)
+            {
+                if (combined.Token.IsCancellationRequested) break;
+                try
                 {
-                    var ip = (await http.GetStringAsync("https://api.ipify.org", combined.Token)).Trim();
-                    _logger.LogDebug("[Token] IP pública obtenida: {Ip}", ip);
-                    return ip;
+                    using var svcCts      = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                    using var svcCombined = CancellationTokenSource.CreateLinkedTokenSource(combined.Token, svcCts.Token);
+                    using var http        = BuildClient();
+
+                    var ip = (await http.GetStringAsync(service, svcCombined.Token)).Trim();
+                    if (!string.IsNullOrWhiteSpace(ip))
+                    {
+                        _logger.LogDebug("[Token] IP pública obtenida de {Service}: {Ip}", service, ip);
+                        return ip;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[Token] {Service} no disponible, intentando siguiente", service);
                 }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw; // Propagar cancelación externa
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[Token] No se pudo obtener IP pública, usando 'unknown'");
-                return "unknown";
-            }
+
+            _logger.LogWarning("[Token] Ningún servicio de IP respondió");
+            return "unknown";
         }
 
         private static IPAddress? GetRealLocalIp()
