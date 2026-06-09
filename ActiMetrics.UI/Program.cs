@@ -174,6 +174,10 @@ namespace ActiMetrics.UI
 
                 _ = host.RunAsync(cts.Token);
 
+                // Capturar la actualización pendiente antes del cierre limpio
+                (UpdateManager Mgr, UpdateInfo Update)? pendingUpdate = null;
+                ActiMetrics.Service.Workers.UpdateWorker.UpdateReady += u => pendingUpdate = u;
+
                 // Cierre iniciado por UpdateWorker (instalador de actualización)
                 host.Services.GetRequiredService<IHostApplicationLifetime>()
                     .ApplicationStopping.Register(() => uiContext.Post(_ => Application.Exit(), null));
@@ -181,10 +185,19 @@ namespace ActiMetrics.UI
                 // Application.Run() bloquea aquí hasta que se llame Application.Exit()
                 Application.Run();
 
-                // Limpieza al salir
+                // Limpieza al salir — todos los servicios y handles se liberan
                 await cts.CancelAsync();
                 await host.StopAsync();
 
+                // Aplicar actualización DESPUÉS del cierre limpio para evitar
+                // "Access Denied" cuando Update.exe intenta reemplazar los archivos.
+                if (pendingUpdate.HasValue)
+                {
+                    Log.Information("[UPDATE] Aplicando actualización tras cierre limpio...");
+                    Log.CloseAndFlush();
+                    pendingUpdate.Value.Mgr.ApplyUpdatesAndRestart(pendingUpdate.Value.Update);
+                    return;
+                }
             }
             catch (Exception ex)
             {

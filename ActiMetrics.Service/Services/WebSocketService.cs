@@ -1,7 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -39,7 +37,6 @@ namespace ActiMetrics.Service.Services
             System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
 
             int consecutiveFails = 0;
-            bool loggedNoInternet = false;
 
             try
             {
@@ -50,26 +47,7 @@ namespace ActiMetrics.Service.Services
 
                     try
                     {
-                        // ── 1. Verificar conectividad antes de intentar ──────────────────────
-                        if (!await HasInternetAsync(sessionCts.Token))
-                        {
-                            if (!loggedNoInternet)
-                            {
-                                _logger.LogWarning("[WS] Sin conexión a internet, esperando para reconectar...");
-                                loggedNoInternet = true;
-                            }
-                            await Task.Delay(5000, sessionCts.Token);
-                            continue;
-                        }
-
-                        if (loggedNoInternet)
-                        {
-                            _logger.LogInformation("[WS] Conexión a internet restaurada, iniciando WebSocket");
-                            loggedNoInternet = false;
-                            consecutiveFails = 0;
-                        }
-
-                        // ── 2. Generar token y conectar ──────────────────────────────────────
+                        // ── Generar token y conectar ─────────────────────────────────────────
                         _logger.LogInformation("[WS] Generando token JWT (intento #{N})...", consecutiveFails + 1);
                         var token = await _tokenService.GenerateTokenAsync(sessionCts.Token);
 
@@ -122,27 +100,6 @@ namespace ActiMetrics.Service.Services
                 Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
                 System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
                 System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
-            }
-        }
-
-        // TCP a Google DNS en 3s — no requiere permisos especiales ni ICMP
-        private static async Task<bool> HasInternetAsync(CancellationToken ct)
-        {
-            try
-            {
-                using var timeoutCts = new CancellationTokenSource(3000);
-                using var combined = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-                using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53), combined.Token);
-                return true;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw; // Propagar cancelación externa
-            }
-            catch
-            {
-                return false;
             }
         }
 

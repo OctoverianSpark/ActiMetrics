@@ -39,27 +39,6 @@ namespace ActiMetrics.Service.Services
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CloseHandle(IntPtr hObject);
 
-        private static readonly Dictionary<string, string> BrowserNames = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["chrome"]   = "Chrome",
-            ["msedge"]   = "Edge",
-            ["firefox"]  = "Firefox",
-            ["brave"]    = "Brave",
-            ["opera"]    = "Opera",
-            ["vivaldi"]  = "Vivaldi",
-            ["iexplore"] = "Internet Explorer",
-        };
-
-        private static readonly Dictionary<string, string[]> BrowserSuffixes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["chrome"]   = [" - Google Chrome"],
-            ["msedge"]   = [" - Microsoft Edge"],
-            ["firefox"]  = [" - Mozilla Firefox", " — Mozilla Firefox"],
-            ["brave"]    = [" - Brave"],
-            ["opera"]    = [" - Opera"],
-            ["vivaldi"]  = [" - Vivaldi"],
-            ["iexplore"] = [" - Windows Internet Explorer", " - Internet Explorer"],
-        };
 
         [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode)]
         private static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int wtsInfoClass, out IntPtr ppBuffer, out uint pBytesReturned);
@@ -149,6 +128,12 @@ namespace ActiMetrics.Service.Services
             _intervalStart = now;
         }
 
+        private static string? TryGetMainModulePath(Process process)
+        {
+            try { return process.MainModule?.FileName; }
+            catch { return null; }
+        }
+
         private static string? QueryProcessPath(uint pid)
         {
             const uint ProcessQueryLimitedInformation = 0x1000;
@@ -187,61 +172,15 @@ namespace ActiMetrics.Service.Services
                     return string.IsNullOrEmpty(title) ? "Windows App" : title;
                 }
 
-                if (BrowserNames.TryGetValue(processName, out var browserLabel))
-                {
-                    var sb = new StringBuilder(512);
-                    GetWindowText(hwnd, sb, sb.Capacity);
-                    var title = sb.ToString().Trim();
+                // Para todos los demás procesos: usar ProductName del ejecutable.
+                // QueryFullProcessImageName funciona cross-bitness (32/64-bit);
+                // process.MainModule se usa como fallback si falla.
+                var exePath = QueryProcessPath(pid) ?? TryGetMainModulePath(process);
 
-                    if (!string.IsNullOrEmpty(title))
-                    {
-                        if (BrowserSuffixes.TryGetValue(processName, out var suffixes))
-                        {
-                            foreach (var suffix in suffixes)
-                            {
-                                if (title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    title = title[..^suffix.Length].Trim();
-                                    break;
-                                }
-                            }
-                        }
-
-                        var separators = new[] { " - ", " | ", " · ", " / " };
-                        foreach (var sep in separators)
-                        {
-                            var idx = title.LastIndexOf(sep, StringComparison.Ordinal);
-                            if (idx >= 0)
-                            {
-                                title = title[(idx + sep.Length)..].Trim();
-                                break;
-                            }
-                        }
-
-                        return $"{browserLabel}: {title}";
-                    }
-                }
-
-                // QueryFullProcessImageName funciona cross-bitness (32/64-bit)
-                // a diferencia de process.MainModule que lanza Win32Exception.
-                var exePath = QueryProcessPath(pid);
                 if (!string.IsNullOrEmpty(exePath))
-                {
-                    try
-                    {
-                        var info = FileVersionInfo.GetVersionInfo(exePath);
-                        if (!string.IsNullOrWhiteSpace(info.ProductName))
-                            return info.ProductName;
-                        return Path.GetFileNameWithoutExtension(exePath);
-                    }
-                    catch { }
-                }
+                    return Path.GetFileName(exePath);
 
-                // Fallback final: título de ventana → nombre de proceso
-                var titleSb = new StringBuilder(512);
-                GetWindowText(hwnd, titleSb, titleSb.Capacity);
-                var winTitle = titleSb.ToString().Trim();
-                return string.IsNullOrWhiteSpace(winTitle) ? processName : winTitle;
+                return processName;
             }
             catch (Exception ex)
             {

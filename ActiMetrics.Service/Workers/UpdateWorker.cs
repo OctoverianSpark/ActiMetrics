@@ -8,8 +8,13 @@ namespace ActiMetrics.Service.Workers
 {
     public class UpdateWorker(
         ILogger<UpdateWorker> logger,
-        IConfiguration configuration) : BackgroundService
+        IConfiguration configuration,
+        IHostApplicationLifetime lifetime) : BackgroundService
     {
+        // Program.cs suscribe a este evento para aplicar la actualización
+        // después del cierre limpio del host.
+        public static event Action<(UpdateManager Mgr, UpdateInfo Update)>? UpdateReady;
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
@@ -17,7 +22,7 @@ namespace ActiMetrics.Service.Workers
             while (!stoppingToken.IsCancellationRequested)
             {
                 await VerificarActualizacion(stoppingToken);
-                await Task.Delay(TimeSpan.FromHours(2), stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
             }
         }
 
@@ -32,9 +37,18 @@ namespace ActiMetrics.Service.Workers
                     return;
                 }
 
-                logger.LogInformation("[UPDATE] Verificando actualizaciones en {Url}", updateUrl);
-
                 var mgr = new UpdateManager(updateUrl);
+
+                logger.LogInformation("[UPDATE] Instalado via Velopack: {Installed} | Versión actual: {Version}",
+                    mgr.IsInstalled, mgr.CurrentVersion);
+
+                if (!mgr.IsInstalled)
+                {
+                    logger.LogWarning("[UPDATE] La aplicación no está instalada via Velopack. Actualización omitida.");
+                    return;
+                }
+
+                logger.LogInformation("[UPDATE] Verificando actualizaciones en {Url}", updateUrl);
                 var update = await mgr.CheckForUpdatesAsync();
 
                 if (update is null)
@@ -50,8 +64,12 @@ namespace ActiMetrics.Service.Workers
                     p => logger.LogInformation("[UPDATE] Descargando: {Percent}%", p),
                     stoppingToken);
 
-                logger.LogInformation("[UPDATE] Descarga completa. Aplicando actualización y reiniciando...");
-                mgr.ApplyUpdatesAndRestart(update);
+                logger.LogInformation("[UPDATE] Descarga completa. Cerrando aplicación para aplicar actualización...");
+
+                // Notificar a Program.cs para que aplique la actualización
+                // DESPUÉS del cierre limpio (todos los handles liberados).
+                UpdateReady?.Invoke((mgr, update));
+                lifetime.StopApplication();
             }
             catch (Exception ex)
             {
