@@ -16,7 +16,7 @@ namespace ActiMetrics.Service.Services
         private readonly ILogger<WebSocketService> _logger;
         private ClientWebSocket _client = new();
 
-        private const string ServerUrl = "wss://actimetricsconn.asistentevirtualsas.com";
+        private const string ServerUrl = "wss://gotracerconn.asistentevirtualsas.com";
 
         public event Action<(string Title, string Text)>? OnNotification;
         public event Action? OnRestart;
@@ -199,10 +199,10 @@ namespace ActiMetrics.Service.Services
 
             await (message switch
             {
-                WsActionMessage m      => HandleActionAsync(m),
-                WsFileMessage m        => HandleFileAsync(m),
+                WsActionMessage m => HandleActionAsync(m),
+                WsFileMessage m => HandleFileAsync(m),
                 WsNotificationMessage m => HandleNotificationAsync(m),
-                _                      => Task.CompletedTask
+                _ => Task.CompletedTask
             });
         }
 
@@ -211,13 +211,13 @@ namespace ActiMetrics.Service.Services
             _logger.LogInformation("[WS] Acción recibida: {Action}", m.Action);
             await (m.Action switch
             {
-                WsActionType.Lock       => Task.Run(() => LockWorkStation()),
-                WsActionType.Restart    => Task.Run(() => Process.Start("shutdown", "/r /t 0")),
-                WsActionType.Shutdown   => Task.Run(() => Process.Start("shutdown", "/s /t 0")),
-                WsActionType.Logoff     => Task.Run(() => Process.Start("shutdown", "/l")),
-                WsActionType.Sync       => SyncAsync(),
+                WsActionType.Lock => Task.Run(() => LockWorkStation()),
+                WsActionType.Restart => Task.Run(() => Process.Start("shutdown", "/r /t 0")),
+                WsActionType.Shutdown => Task.Run(() => Process.Start("shutdown", "/s /t 0")),
+                WsActionType.Logoff => Task.Run(() => Process.Start("shutdown", "/l")),
+                WsActionType.Sync => SyncAsync(),
                 WsActionType.RestartApp => Task.Run(() => OnRestart?.Invoke()),
-                _                       => Task.CompletedTask
+                _ => Task.CompletedTask
             });
         }
 

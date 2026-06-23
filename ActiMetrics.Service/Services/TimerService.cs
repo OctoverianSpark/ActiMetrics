@@ -32,6 +32,11 @@ namespace ActiMetrics.Service.Services
         [DllImport("kernel32.dll")]
         private static extern uint WTSGetActiveConsoleSessionId();
 
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        private static bool IsRemoteSession() => GetSystemMetrics(0x1000) != 0; // SM_REMOTESESSION
+
         private static string GetActualUserName()
         {
             try
@@ -59,6 +64,13 @@ namespace ActiMetrics.Service.Services
             _syncService = syncService;
             _workerId = Environment.MachineName;
             _workerUserName = GetActualUserName();
+        }
+
+        public async Task FallbackInitializeAsync()
+        {
+            await LogStateAsync(StateCategory.Active, WorkState.Working, StateType.Auto);
+            _isReady = true;
+            Console.WriteLine($"[Tracer] Iniciado en modo libre (sin conexión) | Worker: {_workerId}");
         }
 
         public async Task InitializeAsync()
@@ -175,12 +187,20 @@ namespace ActiMetrics.Service.Services
             if (ahora >= endDay && !_endDayReachedNotified)
             {
                 _endDayReachedNotified = true;
-                _shutdownAt = DateTime.Now.AddMinutes(60);
-                _trayService?.NotifyWithAction(
-                    ("🔴 Jornada finalizada", "El equipo se apagará en 1 hora. Selecciona 'Horas Extras' en el menú para cancelar."),
-                    "30 minutos más",
-                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
-                Console.WriteLine("[Tracer] Jornada finalizada. Apagado programado en 60 min.");
+                if (IsRemoteSession())
+                {
+                    _trayService?.Notify(("🔴 Jornada finalizada", "Sesión remota detectada — el equipo no se apagará automáticamente."));
+                    Console.WriteLine("[Tracer] Jornada finalizada (sesión RDP — apagado automático desactivado).");
+                }
+                else
+                {
+                    _shutdownAt = DateTime.Now.AddMinutes(60);
+                    _trayService?.NotifyWithAction(
+                        ("🔴 Jornada finalizada", "El equipo se apagará en 1 hora. Selecciona 'Horas Extras' en el menú para cancelar."),
+                        "30 minutos más",
+                        () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
+                    Console.WriteLine("[Tracer] Jornada finalizada. Apagado programado en 60 min.");
+                }
             }
 
             if (_shutdownAt is null) return;

@@ -1,5 +1,4 @@
-﻿// Tracer.Service/Workers/ScreenWorker.cs
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using ActiMetrics.Service.Services;
 
 namespace ActiMetrics.Service.Workers
@@ -8,43 +7,60 @@ namespace ActiMetrics.Service.Workers
     {
         private readonly ScreenshotService _screenshotService;
         private readonly AppTrackerService _appTrackerService;
+        private readonly InputTrackerService _inputTrackerService;
         private readonly SyncService _syncService;
 
-        public ScreenWorker(ScreenshotService screenshotService, AppTrackerService appTrackerService, SyncService syncService)
-        {
-            _screenshotService = screenshotService;
-            _appTrackerService = appTrackerService;
-            _syncService = syncService;
-        }
-
         private static readonly TimeSpan ScreenshotInterval = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan AppUsageInterval  = TimeSpan.FromMinutes(3);
+        private static readonly TimeSpan FlushInterval      = TimeSpan.FromMinutes(1);
+
+        public ScreenWorker(
+            ScreenshotService screenshotService,
+            AppTrackerService appTrackerService,
+            InputTrackerService inputTrackerService,
+            SyncService syncService)
+        {
+            _screenshotService   = screenshotService;
+            _appTrackerService   = appTrackerService;
+            _inputTrackerService = inputTrackerService;
+            _syncService         = syncService;
+        }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            _inputTrackerService.Start();
+
             var lastScreenshot = DateTime.MinValue;
             var lastFlush      = DateTime.Now;
 
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                var now = DateTime.Now;
-
-                _appTrackerService.Tick();
-
-                if (now - lastFlush >= AppUsageInterval)
+                while (!stoppingToken.IsCancellationRequested)
                 {
-                    await _appTrackerService.FlushIntervalAsync();
-                    lastFlush = now;
-                }
+                    var now = DateTime.Now;
 
-                if (now - lastScreenshot >= ScreenshotInterval)
-                {
-                    await _screenshotService.TickAsync();
-                    await _syncService.SyncScreenshotAsync();
-                    lastScreenshot = now;
-                }
+                    _appTrackerService.Tick();
+                    _inputTrackerService.Tick();
 
-                await Task.Delay(1000, stoppingToken);
+                    if (now - lastFlush >= FlushInterval)
+                    {
+                        var (active, idle, clicks, keys) = _inputTrackerService.GetAndResetCounts();
+                        await _appTrackerService.FlushIntervalAsync(active, idle, clicks, keys);
+                        lastFlush = now;
+                    }
+
+                    if (now - lastScreenshot >= ScreenshotInterval)
+                    {
+                        await _screenshotService.TickAsync();
+                        await _syncService.SyncScreenshotAsync();
+                        lastScreenshot = now;
+                    }
+
+                    await Task.Delay(1000, stoppingToken);
+                }
+            }
+            finally
+            {
+                _inputTrackerService.Dispose();
             }
         }
     }

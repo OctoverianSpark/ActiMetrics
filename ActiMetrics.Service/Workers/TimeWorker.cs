@@ -18,7 +18,15 @@ namespace ActiMetrics.Service.Workers
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            await _timerService.InitializeAsync();
+            try
+            {
+                await _timerService.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[TimeWorker] Error en InitializeAsync — iniciando en modo libre");
+                await _timerService.FallbackInitializeAsync();
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {

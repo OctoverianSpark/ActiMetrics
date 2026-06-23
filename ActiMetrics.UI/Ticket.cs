@@ -203,9 +203,16 @@ public class Ticket : Form
         var json = await response.Content.ReadAsStringAsync();
         if (response.IsSuccessStatusCode)
         {
+            string message = json;
+            try
+            {
+                var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
+                if (items?.Count > 0 && items[0].TryGetProperty("data", out var dataProp))
+                    message = dataProp.GetString() ?? json;
+            }
+            catch { }
 
-            MessageBox.Show(json);
-
+            MessageBox.Show(message, "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }
         else

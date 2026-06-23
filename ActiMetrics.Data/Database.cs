@@ -41,17 +41,29 @@ namespace ActiMetrics.Data
                 );
             ");
             conn.Execute(@"
-                    CREATE TABLE IF NOT EXISTS AppUsageLog (
-                        Id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                        WorkerId      TEXT    NOT NULL,
-                        WorkerUserName      TEXT    NOT NULL,
-                        Apps       TEXT    NOT NULL,
-                        Seconds       REAL    NOT NULL DEFAULT 0,
-                        IntervalStart TEXT    NOT NULL,
-                        IntervalEnd   TEXT    NOT NULL,
-                        Synced        INTEGER NOT NULL DEFAULT 0
-                    );
-                ");
+                CREATE TABLE IF NOT EXISTS AppUsageLog (
+                    Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    WorkerId      TEXT    NOT NULL,
+                    WorkerUserName TEXT   NOT NULL,
+                    Apps          TEXT    NOT NULL,
+                    IntervalStart TEXT    NOT NULL,
+                    IntervalEnd   TEXT    NOT NULL,
+                    ActiveSeconds INTEGER NOT NULL DEFAULT 0,
+                    IdleSeconds   INTEGER NOT NULL DEFAULT 0,
+                    MouseClicks   INTEGER NOT NULL DEFAULT 0,
+                    Keystrokes    INTEGER NOT NULL DEFAULT 0,
+                    Synced        INTEGER NOT NULL DEFAULT 0
+                );
+            ");
+            // Migración: agregar columnas nuevas si la tabla ya existe
+            foreach (var col in new[] { "ActiveSeconds INTEGER NOT NULL DEFAULT 0",
+                                        "IdleSeconds   INTEGER NOT NULL DEFAULT 0",
+                                        "MouseClicks   INTEGER NOT NULL DEFAULT 0",
+                                        "Keystrokes    INTEGER NOT NULL DEFAULT 0" })
+            {
+                try { conn.Execute($"ALTER TABLE AppUsageLog ADD COLUMN {col}"); }
+                catch { /* columna ya existe */ }
+            }
             conn.Execute(@"
                 CREATE TABLE IF NOT EXISTS Screenshots (
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,

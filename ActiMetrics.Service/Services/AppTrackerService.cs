@@ -94,7 +94,7 @@ namespace ActiMetrics.Service.Services
             }
         }
 
-        public async Task FlushIntervalAsync()
+        public async Task FlushIntervalAsync(int activeSeconds, int idleSeconds, int mouseClicks, int keystrokes)
         {
             var now = TimeZoneInfo.ConvertTime(DateTime.Now, TimeZoneInfo.Local);
 
@@ -114,13 +114,13 @@ namespace ActiMetrics.Service.Services
                     .ToArray();
 
                 var appsJson = JsonSerializer.Serialize(apps);
-                await _repository.LogIntervalAsync(_workerId, _workerUserName, _intervalStart, now, appsJson);
+                await _repository.LogIntervalAsync(
+                    _workerId, _workerUserName, _intervalStart, now, appsJson,
+                    activeSeconds, idleSeconds, mouseClicks, keystrokes);
 
-                _logger.LogInformation("[AppUsage] Intervalo {Start:HH:mm:ss} → {End:HH:mm:ss} ({N} apps)",
-                    _intervalStart, now, apps.Length);
-
-                foreach (var a in apps)
-                    _logger.LogDebug("[AppUsage]   {App} → {Time}", a.app, TimeSpan.FromSeconds(a.seconds).ToString(@"mm\:ss"));
+                _logger.LogInformation(
+                    "[AppUsage] {Start:HH:mm:ss}→{End:HH:mm:ss} {N} apps | Activo:{A}s Clicks:{C} Teclas:{K}",
+                    _intervalStart, now, apps.Length, activeSeconds, mouseClicks, keystrokes);
 
                 _currentInterval.Clear();
             }

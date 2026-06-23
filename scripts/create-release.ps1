@@ -13,7 +13,7 @@ $VersionDir     = "$ReleasesDir\$Version"
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ActiMetrics  v$Version" -ForegroundColor White
+Write-Host "  Go Tracer  v$Version" -ForegroundColor White
 if ($Notes) { Write-Host "  Notas: $Notes" -ForegroundColor Gray }
 Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
@@ -38,7 +38,7 @@ if ($velopackVersion) {
 
 # ── 1. Actualizar versión ─────────────────────────────────────────────────────
 $manifestPath = "$Root\ActiMetrics.UI\app.manifest"
-(Get-Content $manifestPath -Raw) -replace 'version="[^"]*"(\s+name="ActiMetrics\.app")', "version=""$Version.0""`$1" |
+(Get-Content $manifestPath -Raw) -replace 'version="[^"]*"(\s+name="GoTracer\.app")', "version=""$Version.0""`$1" |
 Set-Content $manifestPath -NoNewline
 Write-Host "app.manifest → $Version.0" -ForegroundColor Cyan
 
@@ -64,14 +64,14 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish Host falló" }
 # ── 3. Empaquetar UI con Velopack ─────────────────────────────────────────────
 Write-Host "Empaquetando UI con Velopack..." -ForegroundColor Cyan
 vpk pack `
-  -u ActiMetrics `
+  -u GoTracer `
   -v $Version `
   --packDir $PublishDir `
   -o $VersionDir `
-  --mainExe ActiMetrics.exe `
+  --mainExe GoTracer.exe `
   --icon "$PSScriptRoot\assets\AppIcon.ico"
 if ($LASTEXITCODE -ne 0) { throw "vpk pack falló" }
-Write-Host "  → ActiMetrics-$Version-Setup.exe (Velopack)" -ForegroundColor Green
+Write-Host "  → GoTracer-$Version-Setup.exe (Velopack)" -ForegroundColor Green
 
 # ── 4. Localizar Inno Setup ───────────────────────────────────────────────────
 $iscc = @(
@@ -93,7 +93,7 @@ Write-Host "Generando instalador del Host..." -ForegroundColor Cyan
   "/DSourceDir=$HostPublishDir" `
   "$PSScriptRoot\host-setup.iss"
 if ($LASTEXITCODE -ne 0) { throw "ISCC.exe falló (host-setup)" }
-Write-Host "  → ActiMetrics.Host.Setup-$Version.exe" -ForegroundColor Green
+Write-Host "  → GoTracer.Host.Setup-$Version.exe" -ForegroundColor Green
 
 # ── Limpieza ──────────────────────────────────────────────────────────────────
 Remove-Item -Recurse -Force $PublishDir     -ErrorAction SilentlyContinue
@@ -101,7 +101,7 @@ Remove-Item -Recurse -Force $HostPublishDir -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Release $Version lista en: $VersionDir" -ForegroundColor Green
-Write-Host "  UI   (Velopack) : $VersionDir\ActiMetrics-$Version-Setup.exe"      -ForegroundColor Gray
-Write-Host "  Host (Inno)     : $VersionDir\ActiMetrics.Host.Setup-$Version.exe" -ForegroundColor Gray
+Write-Host "  UI   (Velopack) : $VersionDir\GoTracer-$Version-Setup.exe"      -ForegroundColor Gray
+Write-Host "  Host (Inno)     : $VersionDir\GoTracer.Host.Setup-$Version.exe" -ForegroundColor Gray
 if ($Notes) { Write-Host "Notas: $Notes" -ForegroundColor Gray }
 Write-Host ""

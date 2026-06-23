@@ -5,6 +5,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Claims;
 using System.Text;
 
@@ -16,7 +17,7 @@ namespace ActiMetrics.Service.Services
         private readonly IConfiguration _configuration = configuration;
         private readonly ILogger<TokenService> _logger = logger;
 
-        public async Task<string> GenerateTokenAsync(CancellationToken ct = default)
+        public Task<string> GenerateTokenAsync(CancellationToken ct = default)
         {
             string secret = _configuration["Secret"]
                 ?? throw new InvalidOperationException("Falta 'Secret' en appsettings");
@@ -28,9 +29,10 @@ namespace ActiMetrics.Service.Services
             _logger.LogInformation("[Token] Generando JWT para {Email}", email);
 
             var (brand, model) = GetMachineInfo();
-            var ip = await GetPublicIpAsync(ct);
+            var localIp  = GetRealLocalIp()?.ToString() ?? string.Empty;
+            var isRdp    = IsRemoteSession();
 
-            _logger.LogDebug("[Token] MachineId={Id}, IP={Ip}", Environment.MachineName, ip);
+            _logger.LogDebug("[Token] MachineId={Id}, LocalIP={Ip}, RDP={Rdp}", Environment.MachineName, localIp, isRdp);
 
             var claims = new[]
             {
@@ -42,7 +44,8 @@ namespace ActiMetrics.Service.Services
                 new Claim("machineModel",  model),
                 new Claim("userName",      Environment.UserName),
                 new Claim("displayName",   GetDisplayName()),
-                new Claim("ip",            ip),
+                new Claim("localIp",       localIp),
+                new Claim("isRdp",         isRdp ? "true" : "false"),
             };
 
             var token = new JwtSecurityToken(
@@ -51,7 +54,7 @@ namespace ActiMetrics.Service.Services
                 signingCredentials: creds);
 
             _logger.LogInformation("[Token] JWT generado correctamente");
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            return Task.FromResult(new JwtSecurityTokenHandler().WriteToken(token));
         }
 
         private string GetMachineId() =>
@@ -102,77 +105,10 @@ namespace ActiMetrics.Service.Services
             return Environment.UserName;
         }
 
-        private static readonly string[] IpServices =
-        [
-            "https://api.ipify.org",
-            "https://checkip.amazonaws.com",
-            "https://icanhazip.com",
-            "https://api4.my-ip.io/ip",
-        ];
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
 
-        private async Task<string> GetPublicIpAsync(CancellationToken ct = default)
-        {
-            // Timeout global de 20 s; cada servicio tiene 8 s individuales
-            using var globalCts  = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            using var combined   = CancellationTokenSource.CreateLinkedTokenSource(ct, globalCts.Token);
-
-            var localIp = GetRealLocalIp();
-
-            HttpClient BuildClient()
-            {
-                if (localIp == null) return new HttpClient();
-                var handler = new SocketsHttpHandler
-                {
-                    ConnectCallback = async (ctx, innerCt) =>
-                    {
-                        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                        try
-                        {
-                            socket.Bind(new IPEndPoint(localIp, 0));
-                        }
-                        catch
-                        {
-                            // Bind fallido (cuenta de servicio sin acceso directo a la interfaz);
-                            // reconectar sin bind y dejar que el OS elija la ruta.
-                            socket.Dispose();
-                            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                        }
-                        await socket.ConnectAsync(ctx.DnsEndPoint, innerCt);
-                        return new NetworkStream(socket, ownsSocket: true);
-                    }
-                };
-                return new HttpClient(handler);
-            }
-
-            foreach (var service in IpServices)
-            {
-                if (combined.Token.IsCancellationRequested) break;
-                try
-                {
-                    using var svcCts      = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                    using var svcCombined = CancellationTokenSource.CreateLinkedTokenSource(combined.Token, svcCts.Token);
-                    using var http        = BuildClient();
-
-                    var ip = (await http.GetStringAsync(service, svcCombined.Token)).Trim();
-                    if (!string.IsNullOrWhiteSpace(ip))
-                    {
-                        _logger.LogDebug("[Token] IP pública obtenida de {Service}: {Ip}", service, ip);
-                        return ip;
-                    }
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "[Token] {Service} no disponible, intentando siguiente", service);
-                }
-            }
-
-            _logger.LogWarning("[Token] Ningún servicio de IP respondió");
-            return "unknown";
-        }
+        private static bool IsRemoteSession() => GetSystemMetrics(0x1000) != 0; // SM_REMOTESESSION
 
         private static IPAddress? GetRealLocalIp()
         {

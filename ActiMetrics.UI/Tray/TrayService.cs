@@ -18,7 +18,7 @@ namespace ActiMetrics.UI.Tray
         private readonly SyncService _syncService;
         private readonly SynchronizationContext _uiContext;
         private readonly ContextMenuStrip _menu;
-        private string _lastTooltip = "Tracer";
+        private string _lastTooltip = "Go Tracer";
 
         public TrayService(TimerService timerService, WebSocketService socket, SyncService syncService, SynchronizationContext uiContext)
         {
@@ -34,7 +34,7 @@ namespace ActiMetrics.UI.Tray
             {
                 Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application,
                 Visible = true,
-                Text = "Tracer",
+                Text = "Go Tracer",
                 ContextMenuStrip = _menu
             };
 

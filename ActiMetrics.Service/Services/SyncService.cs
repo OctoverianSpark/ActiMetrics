@@ -33,16 +33,16 @@ namespace ActiMetrics.Service.Services
             Session sessionRepository,
             ILogger<SyncService> logger)
         {
-            _stateRepository    = stateRepository;
+            _stateRepository = stateRepository;
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
-            _sessionRepository  = sessionRepository;
-            _logger             = logger;
-            _httpClient         = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-            _apiUrl             = "https://actimetrics.asistentevirtualsas.com";
-            _ticketsUrl         = "https://helpdesk.asistentevirtualsas.com/api/tickets/create";
-            _workerId           = Environment.MachineName;
-            _workerUserName     = Environment.UserName;
+            _sessionRepository = sessionRepository;
+            _logger = logger;
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            _apiUrl = "https://gotracerapi.asistentevirtualsas.com";
+            _ticketsUrl = "https://automations.asistentevirtualsas.com/webhook/create-ticket";
+            _workerId = Environment.MachineName;
+            _workerUserName = Environment.UserName;
         }
 
         public async Task SyncAsync()
@@ -63,7 +63,7 @@ namespace ActiMetrics.Service.Services
                 var fileName = Path.GetFileName(screenshot.FilePath);
                 try
                 {
-                    var sw  = Stopwatch.StartNew();
+                    var sw = Stopwatch.StartNew();
                     var url = $"{_apiUrl}/tracer/screenshot";
                     HttpResponseMessage response;
 
@@ -113,9 +113,9 @@ namespace ActiMetrics.Service.Services
                                    .UserPrincipal.Current.DisplayName;
             var data = new
             {
-                categoria  = category,
+                categoria = category,
                 descripcion = description,
-                usuario    = displayName
+                usuario = displayName
             };
 
             var content = new StringContent(
@@ -124,7 +124,7 @@ namespace ActiMetrics.Service.Services
                 "application/json");
 
             _logger.LogInformation("[API] POST {Url} — Ticket: {Cat}", _ticketsUrl, category);
-            var sw       = Stopwatch.StartNew();
+            var sw = Stopwatch.StartNew();
             var response = await _httpClient.PostAsync(_ticketsUrl, content);
             sw.Stop();
             _logger.LogInformation("[API] Ticket → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
@@ -141,9 +141,9 @@ namespace ActiMetrics.Service.Services
             _logger.LogInformation("[API] POST {Url} — {N} estados pendientes", url, pending.Count());
             try
             {
-                var json    = JsonSerializer.Serialize(pending);
+                var json = JsonSerializer.Serialize(pending);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var sw      = Stopwatch.StartNew();
+                var sw = Stopwatch.StartNew();
                 var response = await _httpClient.PostAsync(url, content);
                 sw.Stop();
 
@@ -177,9 +177,9 @@ namespace ActiMetrics.Service.Services
             _logger.LogInformation("[API] POST {Url} — {N} registros de uso pendientes", url, pending.Count());
             try
             {
-                var json    = JsonSerializer.Serialize(pending);
+                var json = JsonSerializer.Serialize(pending);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var sw      = Stopwatch.StartNew();
+                var sw = Stopwatch.StartNew();
                 var response = await _httpClient.PostAsync(url, content);
                 sw.Stop();
 
@@ -232,30 +232,38 @@ namespace ActiMetrics.Service.Services
         {
             var url = $"{_apiUrl}/appuser/findbyemail?email={email}";
             _logger.LogDebug("[API] GET {Url}", url);
-            var sw  = Stopwatch.StartNew();
-            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
-            sw.Stop();
-            _logger.LogInformation("[API] GetAppuser → {Status} ({Ms}ms)", res.StatusCode, sw.ElapsedMilliseconds);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GetAppuser → {Status} ({Ms}ms)", res.StatusCode, sw.ElapsedMilliseconds);
 
-            if (!res.IsSuccessStatusCode) return null;
+                if (!res.IsSuccessStatusCode) return null;
 
-            var json = await res.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            return JsonSerializer.Deserialize<AppUser>(json, _jsonOptions);
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<AppUser>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar appuser para {Email} — sin conexión, iniciando en modo libre", email);
+                return null;
+            }
         }
 
         private async Task<Schedule?> GetScheduleForDayAsync(int userId, Days today)
         {
             var url = $"{_apiUrl}/schedules?appuser_id={userId}";
             _logger.LogDebug("[API] GET {Url}", url);
-            var sw  = Stopwatch.StartNew();
+            var sw = Stopwatch.StartNew();
             var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
             sw.Stop();
             _logger.LogInformation("[API] GetSchedule userId={Id} → {Status} ({Ms}ms)", userId, res.StatusCode, sw.ElapsedMilliseconds);
 
             if (!res.IsSuccessStatusCode) return null;
 
-            var json      = await res.Content.ReadAsStringAsync();
+            var json = await res.Content.ReadAsStringAsync();
             if (string.IsNullOrWhiteSpace(json)) return null;
             var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, _jsonOptions);
             return schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
@@ -265,7 +273,7 @@ namespace ActiMetrics.Service.Services
         {
             var url = $"{_apiUrl}/programations/{programationId}";
             _logger.LogDebug("[API] GET {Url}", url);
-            var sw  = Stopwatch.StartNew();
+            var sw = Stopwatch.StartNew();
             var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
             sw.Stop();
             _logger.LogInformation("[API] GetProgramation id={Id} → {Status} ({Ms}ms)", programationId, res.StatusCode, sw.ElapsedMilliseconds);
@@ -279,14 +287,14 @@ namespace ActiMetrics.Service.Services
 
         private static Days GetToday() => DateTime.Now.DayOfWeek switch
         {
-            DayOfWeek.Monday    => Days.L,
-            DayOfWeek.Tuesday   => Days.M,
+            DayOfWeek.Monday => Days.L,
+            DayOfWeek.Tuesday => Days.M,
             DayOfWeek.Wednesday => Days.X,
-            DayOfWeek.Thursday  => Days.J,
-            DayOfWeek.Friday    => Days.V,
-            DayOfWeek.Saturday  => Days.S,
-            DayOfWeek.Sunday    => Days.D,
-            _                   => throw new ArgumentOutOfRangeException()
+            DayOfWeek.Thursday => Days.J,
+            DayOfWeek.Friday => Days.V,
+            DayOfWeek.Saturday => Days.S,
+            DayOfWeek.Sunday => Days.D,
+            _ => throw new ArgumentOutOfRangeException()
         };
     }
 }

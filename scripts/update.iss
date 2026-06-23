@@ -8,25 +8,25 @@
   #define HostSourceDir "..\publish-host"
 #endif
 
-#define MyAppName     "ActiMetrics"
-#define MyAppExe      "ActiMetrics.exe"
-#define MyServiceName "ActiMetrics Host"
+#define MyAppName     "Go Tracer"
+#define MyAppExe      "GoTracer.exe"
+#define MyServiceName "Go Tracer Host"
 #define MyServiceExe  "ActiMetrics.Host.exe"
-#define MyPublisher   "ActiMetrics"
+#define MyPublisher   "Go Tracer"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyPublisher}
 AppId={{D7E8F9A0-B1C2-3D4E-5F6A-7B8C9D0E1F2A}
-DefaultDirName={autopf}\ActiMetrics
+DefaultDirName={autopf}\Go Tracer
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 DisableDirPage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
 OutputDir=..\releases\{#MyAppVersion}
-OutputBaseFilename=ActiMetrics.Update-{#MyAppVersion}
+OutputBaseFilename=GoTracer.Update-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 PrivilegesRequired=admin

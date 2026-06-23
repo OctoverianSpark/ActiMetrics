@@ -9,8 +9,8 @@ namespace ActiMetrics.UI
 {
     public static class StartupManager
     {
-        private const string TaskName = "ActiMetrics";
-        private const string ExeName = "ActiMetrics.exe";
+        private const string TaskName = "Go Tracer";
+        private const string ExeName = "GoTracer.exe";
 
         private static string GetExecutablePath()
         {
@@ -45,7 +45,7 @@ namespace ActiMetrics.UI
                 <?xml version="1.0" encoding="UTF-16"?>
                 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
                   <RegistrationInfo>
-                    <Description>Mantiene ActiMetrics activo y lo reinicia si se cierra.</Description>
+                    <Description>Mantiene Go Tracer activo y lo reinicia si se cierra.</Description>
                   </RegistrationInfo>
                   <Triggers>
                     <LogonTrigger>

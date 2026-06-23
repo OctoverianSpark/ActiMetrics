@@ -1,18 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
 namespace ActiMetrics.Shared.Models
 {
     public class AppUsageLog
     {
-
         public int Id { get; set; }
-        public string WorkerId { get; set; }
-        public string WorkerUserName { get; set; }
-        public string IntervalStart { get; set; }
-        public string IntervalEnd { get; set; }
-        public string Apps { get; set; } // JSON: [{"app":"Chrome","seconds":142.5}]
+        public string WorkerId { get; set; } = string.Empty;
+        public string WorkerUserName { get; set; } = string.Empty;
+        public string IntervalStart { get; set; } = string.Empty;
+        public string IntervalEnd { get; set; } = string.Empty;
+        public string Apps { get; set; } = string.Empty; // JSON: [{"app":"chrome.exe","seconds":142.5}]
+        public int ActiveSeconds { get; set; }
+        public int IdleSeconds { get; set; }
+        public int MouseClicks { get; set; }
+        public int Keystrokes { get; set; }
         public bool Synced { get; set; }
     }
 }

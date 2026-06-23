@@ -8,21 +8,21 @@
   #define HostSourceDir "..\publish-host"
 #endif
 
-#define MyAppName     "ActiMetrics"
-#define MyAppExe      "ActiMetrics.exe"
-#define MyServiceName "ActiMetrics Host"
+#define MyAppName     "Go Tracer"
+#define MyAppExe      "GoTracer.exe"
+#define MyServiceName "Go Tracer Host"
 #define MyServiceExe  "ActiMetrics.Host.exe"
-#define MyPublisher   "ActiMetrics"
+#define MyPublisher   "Go Tracer"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyPublisher}
 AppId={{D7E8F9A0-B1C2-3D4E-5F6A-7B8C9D0E1F2A}
-DefaultDirName={autopf}\ActiMetrics
+DefaultDirName={autopf}\Go Tracer
 DisableProgramGroupPage=yes
 OutputDir=..\releases\{#MyAppVersion}
-OutputBaseFilename=ActiMetrics.Setup-{#MyAppVersion}
+OutputBaseFilename=GoTracer.Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -102,7 +102,7 @@ end;
 procedure LimpiarRutaAnterior();
 var FindRec: TFindRec; RootDir: String;
 begin
-  RootDir := ExpandConstant('{autopf}') + '\ActiMetrics\';
+  RootDir := ExpandConstant('{autopf}') + '\Go Tracer\';
   if not FileExists(RootDir + '{#MyServiceExe}') then Exit;
   if ServiceExists('{#MyServiceName}') then
     StopAndDeleteService('{#MyServiceName}');
@@ -142,10 +142,10 @@ begin
     Exec(ExpandConstant('{app}') + '\UI\{#MyAppExe}', '--checkInstall',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(500);
-    Exec(ExpandConstant('{sys}') + '\schtasks.exe', '/delete /tn "ActiMetrics" /f',
+    Exec(ExpandConstant('{sys}') + '\schtasks.exe', '/delete /tn "Go Tracer" /f',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     RegDeleteValue(HKEY_CURRENT_USER,
-      'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'ActiMetrics');
+      'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'Go Tracer');
     if ServiceExists('{#MyServiceName}') then
       StopAndDeleteService('{#MyServiceName}');
   end;

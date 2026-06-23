@@ -5,20 +5,20 @@
   #define SourceDir "..\publish-host"
 #endif
 
-#define MyAppName    "ActiMetrics Host"
-#define MyServiceName "ActiMetrics Host"
+#define MyAppName    "Go Tracer Host"
+#define MyServiceName "Go Tracer Host"
 #define MyServiceExe  "ActiMetrics.Host.exe"
-#define MyPublisher   "ActiMetrics"
+#define MyPublisher   "Go Tracer"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyPublisher}
 AppId={{F3A2B1C4-8D6E-4F0A-9B2C-3E5D7A1F8C4B}
-DefaultDirName={autopf}\ActiMetrics\Host
+DefaultDirName={autopf}\Go Tracer\Host
 DisableProgramGroupPage=yes
 OutputDir=..\releases\{#MyAppVersion}
-OutputBaseFilename=ActiMetrics.Host.Setup-{#MyAppVersion}
+OutputBaseFilename=GoTracer.Host.Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -111,7 +111,7 @@ var
   FindRec: TFindRec;
 begin
   // La instalación vieja ponía los archivos directamente en {autopf}\ActiMetrics\
-  RutaVieja := ExpandConstant('{autopf}') + '\ActiMetrics\';
+  RutaVieja := ExpandConstant('{autopf}') + '\Go Tracer\';
 
   // Solo limpiar si existen archivos del Host sueltos en esa raíz
   if not FileExists(RutaVieja + '{#MyServiceExe}') then Exit;

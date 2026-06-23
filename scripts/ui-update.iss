@@ -5,23 +5,23 @@
   #define UISourceDir "..\publish"
 #endif
 
-#define MyAppName "ActiMetrics"
-#define MyAppExe  "ActiMetrics.exe"
-#define MyPublisher "ActiMetrics"
+#define MyAppName "Go Tracer"
+#define MyAppExe  "GoTracer.exe"
+#define MyPublisher "Go Tracer"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyPublisher}
 AppId={{D7E8F9A0-B1C2-3D4E-5F6A-7B8C9D0E1F2A}
-DefaultDirName={autopf}\ActiMetrics
+DefaultDirName={autopf}\Go Tracer
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 DisableDirPage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
 OutputDir=..\releases\{#MyAppVersion}
-OutputBaseFilename=ActiMetrics.UIUpdate-{#MyAppVersion}
+OutputBaseFilename=GoTracer.UIUpdate-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 PrivilegesRequired=admin

@@ -32,7 +32,7 @@ namespace ActiMetrics.UI
                 StartupManager.HabilitarInicio(false);
 
                 var self = Process.GetCurrentProcess();
-                foreach (var p in Process.GetProcessesByName("ActiMetrics"))
+                foreach (var p in Process.GetProcessesByName("GoTracer"))
                 {
                     if (p.Id == self.Id) continue;
                     p.CloseMainWindow();
@@ -61,7 +61,7 @@ namespace ActiMetrics.UI
 
             // Garantiza una única instancia; Task Scheduler puede intentar reiniciar
             // mientras la app todavía está corriendo → salir silenciosamente en ese caso
-            using var mutex = new Mutex(true, "Global\\ActiMetrics_SingleInstance", out bool isNewInstance);
+            using var mutex = new Mutex(true, "Global\\GoTracer_SingleInstance", out bool isNewInstance);
             if (!isNewInstance)
                 return;
 
@@ -71,7 +71,7 @@ namespace ActiMetrics.UI
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                 .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
                 .WriteTo.File(
-                    path: Path.Combine(AppContext.BaseDirectory, "logs", "app", "actimetrics-.log"),
+                    path: Path.Combine(AppContext.BaseDirectory, "logs", "app", "gotracer-.log"),
                     rollingInterval: RollingInterval.Day,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
@@ -87,7 +87,7 @@ namespace ActiMetrics.UI
 
             try
             {
-                Log.Information("Iniciando ActiMetrics...");
+                Log.Information("Iniciando Go Tracer...");
 
                 if (!StartupManager.EstaHabilitado())
                     StartupManager.HabilitarInicio(true);
@@ -129,6 +129,7 @@ namespace ActiMetrics.UI
                         services.AddSingleton<TimerService>();
                         services.AddSingleton<ScreenshotService>();
                         services.AddSingleton<AppTrackerService>();
+                        services.AddSingleton<InputTrackerService>();
                         services.AddSingleton<WebSocketService>();
                         services.AddSingleton<SyncService>();
 

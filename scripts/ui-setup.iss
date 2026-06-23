@@ -5,19 +5,19 @@
   #define SourceDir "..\publish"
 #endif
 
-#define MyAppName    "ActiMetrics"
-#define MyAppExe     "ActiMetrics.exe"
-#define MyPublisher  "ActiMetrics"
+#define MyAppName    "Go Tracer"
+#define MyAppExe     "GoTracer.exe"
+#define MyPublisher  "Go Tracer"
 
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyPublisher}
 AppId={{B4C5D6E7-F8A9-0B1C-2D3E-4F5A6B7C8D9E}
-DefaultDirName={autopf}\ActiMetrics\UI
+DefaultDirName={autopf}\Go Tracer\UI
 DisableProgramGroupPage=yes
 OutputDir=..\releases\{#MyAppVersion}
-OutputBaseFilename=ActiMetrics.Setup-{#MyAppVersion}
+OutputBaseFilename=GoTracer.Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -84,10 +84,10 @@ begin
     Sleep(500);
     // Elimina la tarea programada directamente
     Exec(ExpandConstant('{sys}') + '\schtasks.exe',
-      '/delete /tn "ActiMetrics" /f',
+      '/delete /tn "Go Tracer" /f',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // Elimina la entrada de registro Run
     RegDeleteValue(HKEY_CURRENT_USER,
-      'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'ActiMetrics');
+      'SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'Go Tracer');
   end;
 end;
