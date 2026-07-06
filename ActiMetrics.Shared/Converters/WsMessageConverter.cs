@@ -21,6 +21,7 @@ namespace ActiMetrics.Shared.Converters
                 WsMessageType.Action => JsonSerializer.Deserialize<WsActionMessage>(root.GetRawText(), options),
                 WsMessageType.Notification => JsonSerializer.Deserialize<WsNotificationMessage>(root.GetRawText(), options),
                 WsMessageType.File => JsonSerializer.Deserialize<WsFileMessage>(root.GetRawText(), options),
+                WsMessageType.UserInfo => JsonSerializer.Deserialize<WsUserInfoMessage>(root.GetRawText(), options),
                 _ => null
             };
         }

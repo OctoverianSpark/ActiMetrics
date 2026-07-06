@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using ActiMetrics.Shared.Converters;
 
@@ -11,7 +12,9 @@ namespace ActiMetrics.Shared.Models
     {
         Action,
         File,
-        Notification
+        Notification,
+        SyncData,
+        UserInfo
     }
 
     public enum WsActionType
@@ -49,5 +52,27 @@ namespace ActiMetrics.Shared.Models
         public string MimeType { get; set; } = string.Empty;
         public string Data { get; set; } = string.Empty; // ← coincide con TS
         public string? SavePath { get; set; }
+    }
+
+    // Agente → servidor, enviado al conectar/reconectar el WebSocket
+    public class WsSyncDataMessage : WsMessage
+    {
+        public string? Hostname { get; set; }
+        public string? Ip { get; set; }
+        public string? Username { get; set; }
+        public string? MachineBrand { get; set; }
+        public string? MachineModel { get; set; }
+    }
+
+    // Servidor → agente, respuesta al SyncData con datos de usuario/rol/permisos
+    public class WsUserInfoMessage : WsMessage
+    {
+        public string? Appuser_Id { get; set; }
+        public string? Full_Name { get; set; }
+        public string? Email { get; set; }
+        public string? Role { get; set; }
+        public JsonElement? Access_Level { get; set; }
+        public string? Group { get; set; }
+        public string? Absence_Status { get; set; }
     }
 }

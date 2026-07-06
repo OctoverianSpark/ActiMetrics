@@ -6,6 +6,13 @@ public class Session
     private readonly string _file;
     private string? _email;
 
+    public string? AppuserId { get; private set; }
+    public string? FullName { get; private set; }
+    public string? Role { get; private set; }
+    public string? Group { get; private set; }
+    public string? AbsenceStatus { get; private set; }
+    public JsonElement? AccessLevel { get; private set; }
+
     public Session()
     {
         var localAppData =
@@ -44,5 +51,16 @@ public class Session
     {
         _email = null;
         File.WriteAllText(_file, string.Empty);
+    }
+
+    public void SetUserInfo(string? appuserId, string? fullName, string? role, string? group, string? absenceStatus, JsonElement? accessLevel)
+    {
+        AppuserId = appuserId;
+        FullName = fullName;
+        Role = role;
+        Group = group;
+        AbsenceStatus = absenceStatus;
+        AccessLevel = accessLevel;
+        Console.WriteLine($"[SESSION]: UserInfo actualizado → role={role}, group={group}, absence_status={absenceStatus}");
     }
 }

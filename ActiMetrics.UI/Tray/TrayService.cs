@@ -111,6 +111,7 @@ namespace ActiMetrics.UI.Tray
 
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
+            menu.Items.Add(new ToolStripMenuItem("Reportar", null, (s, e) => OpenReportForm()));
 
             UpdateMenuCheck(WorkState.Working);
             return menu;
@@ -120,6 +121,12 @@ namespace ActiMetrics.UI.Tray
         {
             var ticketForm = new Ticket(_syncService);
             ticketForm.Show();
+        }
+
+        public void OpenReportForm()
+        {
+            var reportForm = new Report(_syncService);
+            reportForm.Show();
         }
 
         public void UpdateMenuCheck(WorkState activeState)

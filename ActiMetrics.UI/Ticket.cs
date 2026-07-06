@@ -9,6 +9,7 @@ public class Ticket : Form
     private Panel btnFisico;
     private TextBox txtDescripcion;
     private Button btnEnviar;
+    private ProgressBar spinner;
     private string _categoriaSeleccionada = "";
 
     // ← Para poder arrastrar el formulario sin barra de título
@@ -92,10 +93,18 @@ public class Ticket : Form
         btnEnviar.Cursor = Cursors.Hand;
         btnEnviar.Click += BtnEnviar_Click;
 
+        // --- Spinner (barra indeterminada) mostrada mientras se envía ---
+        spinner = new ProgressBar();
+        spinner.Style = ProgressBarStyle.Marquee;
+        spinner.MarqueeAnimationSpeed = 30;
+        spinner.Location = new Point(20, 500);
+        spinner.Size = new Size(400, 6);
+        spinner.Visible = false;
+
         this.Controls.AddRange(new Control[] {
             btnCerrar, lblTitulo,
             btnApps, btnFisico,
-            txtDescripcion, btnEnviar
+            txtDescripcion, btnEnviar, spinner
         });
     }
 
@@ -199,25 +208,50 @@ public class Ticket : Form
 
     private async void BtnEnviar_Click(object sender, EventArgs e)
     {
-        var response = await _syncService.SaveTicketAsync(_categoriaSeleccionada, txtDescripcion.Text);
-        var json = await response.Content.ReadAsStringAsync();
-        if (response.IsSuccessStatusCode)
-        {
-            string message = json;
-            try
-            {
-                var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
-                if (items?.Count > 0 && items[0].TryGetProperty("data", out var dataProp))
-                    message = dataProp.GetString() ?? json;
-            }
-            catch { }
+        // Evita doble envío mientras la petición está en curso
+        btnEnviar.Enabled = false;
+        btnEnviar.Text = "Enviando…";
+        btnEnviar.BackColor = Color.FromArgb(60, 80, 150);
+        spinner.Visible = true;
 
-            MessageBox.Show(message, "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            this.Close();
-        }
-        else
+        try
         {
-            MessageBox.Show($"Error {response.StatusCode}");
+            var response = await _syncService.SaveTicketAsync(_categoriaSeleccionada, txtDescripcion.Text);
+            var json = await response.Content.ReadAsStringAsync();
+            if (response.IsSuccessStatusCode)
+            {
+                string message = json;
+                try
+                {
+                    var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
+                    if (items?.Count > 0 && items[0].TryGetProperty("data", out var dataProp))
+                        message = dataProp.GetString() ?? json;
+                }
+                catch { }
+
+                MessageBox.Show(message, "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this.Close();
+                return;
+            }
+            else
+            {
+                MessageBox.Show($"Error {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error al enviar: {ex.Message}");
+        }
+        finally
+        {
+            // Restaura el botón solo si el formulario sigue abierto (envío fallido)
+            if (!this.IsDisposed && !this.Disposing)
+            {
+                spinner.Visible = false;
+                btnEnviar.Enabled = true;
+                btnEnviar.Text = "Enviar";
+                btnEnviar.BackColor = Color.FromArgb(37, 99, 235);
+            }
         }
     }
 }

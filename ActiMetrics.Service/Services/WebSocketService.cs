@@ -13,10 +13,16 @@ namespace ActiMetrics.Service.Services
     public class WebSocketService
     {
         private readonly TokenService _tokenService;
+        private readonly Session _session;
         private readonly ILogger<WebSocketService> _logger;
         private ClientWebSocket _client = new();
 
         private const string ServerUrl = "wss://gotracerconn.asistentevirtualsas.com";
+
+        private static readonly JsonSerializerOptions _sendOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public event Action<(string Title, string Text)>? OnNotification;
         public event Action? OnRestart;
@@ -24,9 +30,10 @@ namespace ActiMetrics.Service.Services
         private CancellationTokenSource? _sessionCts;
         private DateTime _lastReconnectTrigger = DateTime.MinValue;
 
-        public WebSocketService(TokenService tokenService, ILogger<WebSocketService> logger)
+        public WebSocketService(TokenService tokenService, Session session, ILogger<WebSocketService> logger)
         {
             _tokenService = tokenService;
+            _session = session;
             _logger = logger;
         }
 
@@ -57,6 +64,8 @@ namespace ActiMetrics.Service.Services
 
                         consecutiveFails = 0;
                         _logger.LogInformation("[WS] Conexión WebSocket establecida exitosamente");
+
+                        await SendSyncDataAsync(sessionCts.Token);
 
                         await ReceiveLoopAsync(sessionCts.Token);
 
@@ -101,6 +110,26 @@ namespace ActiMetrics.Service.Services
                 System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
                 System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
             }
+        }
+
+        private async Task SendSyncDataAsync(CancellationToken ct)
+        {
+            var (brand, model) = TokenService.GetMachineInfo();
+            var message = new WsSyncDataMessage
+            {
+                Type = WsMessageType.SyncData,
+                Hostname = Environment.MachineName,
+                Ip = _tokenService.GetLocalIp(),
+                Username = Environment.UserName,
+                MachineBrand = brand,
+                MachineModel = model
+            };
+
+            var json = JsonSerializer.Serialize(message, _sendOptions);
+            var bytes = Encoding.UTF8.GetBytes(json);
+
+            _logger.LogInformation("[WS] Enviando SyncData...");
+            await _client.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
         }
 
         private void ForceReconnect(string reason)
@@ -202,6 +231,7 @@ namespace ActiMetrics.Service.Services
                 WsActionMessage m => HandleActionAsync(m),
                 WsFileMessage m => HandleFileAsync(m),
                 WsNotificationMessage m => HandleNotificationAsync(m),
+                WsUserInfoMessage m => HandleUserInfoAsync(m),
                 _ => Task.CompletedTask
             });
         }
@@ -224,6 +254,14 @@ namespace ActiMetrics.Service.Services
         private Task SyncAsync()
         {
             _logger.LogInformation("[WS] Sync solicitado por servidor");
+            return Task.CompletedTask;
+        }
+
+        private Task HandleUserInfoAsync(WsUserInfoMessage m)
+        {
+            _logger.LogInformation("[WS] UserInfo recibido: role={Role}, group={Group}, absence_status={AbsenceStatus}",
+                m.Role, m.Group, m.Absence_Status);
+            _session.SetUserInfo(m.Appuser_Id, m.Full_Name, m.Role, m.Group, m.Absence_Status, m.Access_Level);
             return Task.CompletedTask;
         }
 

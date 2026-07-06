@@ -128,7 +128,7 @@ namespace ActiMetrics.Service.Services
             if (category is not null)
                 await LogStateAsync(category.Value, state!.Value, type!.Value);
         }
-        private bool _endDaySoonNotified = false;
+        private bool _endDayFiveMinNotified = false;
         private bool _endDayReachedNotified = false;
         private bool _shutdownFiveMinNotified = false;
         private bool _shutdownMinuteNotified = false;
@@ -174,14 +174,14 @@ namespace ActiMetrics.Service.Services
 
             var ahora = TimeOnly.FromDateTime(DateTime.Now);
             var endDay = TimeOnly.ParseExact(_todayProgramation.End_Day, "HH:mm", null);
-            var aviso = endDay.AddMinutes(-5);
+            var aviso5m = endDay.AddMinutes(-5);
 
-            if (ahora >= aviso && ahora < endDay && !_endDaySoonNotified)
+            if (ahora >= aviso5m && ahora < endDay && !_endDayFiveMinNotified)
             {
-                _endDaySoonNotified = true;
-                _trayService?.Notify(("⚠️ Fin de jornada próximo",
+                _endDayFiveMinNotified = true;
+                _trayService?.Notify(("⚠️ Fin de jornada en 5 minutos",
                     $"Tu jornada termina a las {_todayProgramation.End_Day}. Selecciona 'Horas Extras' en el menú si vas a quedarte."));
-                Console.WriteLine($"[Tracer] Aviso fin de jornada: {_todayProgramation.End_Day}");
+                Console.WriteLine($"[Tracer] Aviso fin de jornada (5m): {_todayProgramation.End_Day}");
             }
 
             if (ahora >= endDay && !_endDayReachedNotified)
@@ -307,8 +307,8 @@ namespace ActiMetrics.Service.Services
             else if (_isOvertimeConfirmed)
             {
                 _isOvertimeConfirmed = false;
-                _endDaySoonNotified    = false;
-                _endDayReachedNotified = false;
+                _endDayFiveMinNotified   = false;
+                _endDayReachedNotified   = false;
                 _shutdownFiveMinNotified = false;
                 _shutdownMinuteNotified  = false;
             }

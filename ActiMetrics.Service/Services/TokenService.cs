@@ -65,7 +65,7 @@ namespace ActiMetrics.Service.Services
                 .FirstOrDefault(m => !string.IsNullOrEmpty(m))
             ?? Environment.MachineName;
 
-        private static (string Brand, string Model) GetMachineInfo()
+        public static (string Brand, string Model) GetMachineInfo()
         {
             try
             {
@@ -79,7 +79,9 @@ namespace ActiMetrics.Service.Services
             return (string.Empty, string.Empty);
         }
 
-        private string GetMachineSerial()
+        public string? GetLocalIp() => GetRealLocalIp()?.ToString();
+
+        public string GetMachineSerial()
         {
             try
             {

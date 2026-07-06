@@ -50,8 +50,11 @@ namespace ActiMetrics.Service.Workers
 
                     if (now - lastScreenshot >= ScreenshotInterval)
                     {
-                        await _screenshotService.TickAsync();
-                        await _syncService.SyncScreenshotAsync();
+                        if (await _syncService.CheckTakeScreenshotsAsync())
+                        {
+                            await _screenshotService.TickAsync();
+                            await _syncService.SyncScreenshotAsync();
+                        }
                         lastScreenshot = now;
                     }
 

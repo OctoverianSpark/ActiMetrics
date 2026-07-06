@@ -14,6 +14,7 @@ namespace ActiMetrics.Service.Services
         private readonly AppUsageRepository _appUsageRepository;
         private readonly ScreenshotRepository _screenshotRepository;
         private readonly Session _sessionRepository;
+        private readonly TokenService _tokenService;
         private readonly ILogger<SyncService> _logger;
         private readonly HttpClient _httpClient;
         private readonly string _apiUrl;
@@ -31,12 +32,14 @@ namespace ActiMetrics.Service.Services
             AppUsageRepository appUsageRepository,
             ScreenshotRepository screenshotRepository,
             Session sessionRepository,
+            TokenService tokenService,
             ILogger<SyncService> logger)
         {
             _stateRepository = stateRepository;
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
             _sessionRepository = sessionRepository;
+            _tokenService = tokenService;
             _logger = logger;
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _apiUrl = "https://gotracerapi.asistentevirtualsas.com";
@@ -49,6 +52,32 @@ namespace ActiMetrics.Service.Services
         {
             await SyncStatesAsync();
             await SyncAppUsageAsync();
+        }
+
+        public async Task<bool> CheckTakeScreenshotsAsync()
+        {
+            var serial = _tokenService.GetMachineSerial();
+            var url = $"{_apiUrl}/tracer/permissions?serial={serial}";
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
+
+                if (!res.IsSuccessStatusCode) return true;
+
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return true;
+
+                var permissions = JsonSerializer.Deserialize<Permissions>(json, _jsonOptions);
+                return permissions?.Take_Screenshots ?? true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar permisos para serial {Serial} — se asume permitido", serial);
+                return true;
+            }
         }
 
         public async Task SyncScreenshotAsync()
@@ -130,6 +159,94 @@ namespace ActiMetrics.Service.Services
             _logger.LogInformation("[API] Ticket → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
 
             return response.EnsureSuccessStatusCode();
+        }
+
+        public async Task<List<ReportType>?> GetReportTypesAsync()
+        {
+            var url = $"{_apiUrl}/report-types";
+            _logger.LogDebug("[API] GET {Url}", url);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
+
+                if (!res.IsSuccessStatusCode) return null;
+
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<List<ReportType>>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar el catálogo de tipos de reporte");
+                return null;
+            }
+        }
+
+        public async Task<HttpResponseMessage> SendReportAsync(int reportTypeId, string message)
+        {
+            var serial = _tokenService.GetMachineSerial();
+            var url = $"{_apiUrl}/tracer/reports";
+            var data = new { serial, report_type_id = reportTypeId, message };
+            var content = new StringContent(JsonSerializer.Serialize(data), Encoding.UTF8, "application/json");
+
+            _logger.LogInformation("[API] POST {Url} — Reporte tipo {TypeId}", url, reportTypeId);
+            var sw = Stopwatch.StartNew();
+            var response = await _httpClient.PostAsync(url, content);
+            sw.Stop();
+            _logger.LogInformation("[API] Reporte → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
+
+            return response;
+        }
+
+        public async Task<List<StateCategoryCatalogItem>?> GetStateCategoriesAsync()
+        {
+            var url = $"{_apiUrl}/state-categories";
+            _logger.LogDebug("[API] GET {Url}", url);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
+
+                if (!res.IsSuccessStatusCode) return null;
+
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<List<StateCategoryCatalogItem>>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar el catálogo de categorías de estado");
+                return null;
+            }
+        }
+
+        public async Task<List<StateCatalogItem>?> GetStatesAsync()
+        {
+            var url = $"{_apiUrl}/states";
+            _logger.LogDebug("[API] GET {Url}", url);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
+
+                if (!res.IsSuccessStatusCode) return null;
+
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<List<StateCatalogItem>>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar el catálogo de estados");
+                return null;
+            }
         }
 
         private async Task SyncStatesAsync()
