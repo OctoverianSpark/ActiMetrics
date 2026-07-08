@@ -52,6 +52,7 @@ namespace ActiMetrics.Service.Services
         {
             await SyncStatesAsync();
             await SyncAppUsageAsync();
+            await RefreshStateCatalogAsync();
         }
 
         public async Task<bool> CheckTakeScreenshotsAsync()
@@ -201,9 +202,39 @@ namespace ActiMetrics.Service.Services
             return response;
         }
 
+        public IReadOnlyList<StateCategoryCatalogItem> StateCategories { get; private set; } = Array.Empty<StateCategoryCatalogItem>();
+        public IReadOnlyList<StateCatalogItem> States { get; private set; } = Array.Empty<StateCatalogItem>();
+        public event Action? StateCatalogRefreshed;
+
+        public async Task RefreshStateCatalogAsync()
+        {
+            var categories = await GetStateCategoriesAsync();
+            if (categories is not null) StateCategories = categories;
+
+            var states = await GetStatesAsync();
+            if (states is not null) States = states;
+
+            if (categories is not null || states is not null)
+                StateCatalogRefreshed?.Invoke();
+        }
+
         public async Task<List<StateCategoryCatalogItem>?> GetStateCategoriesAsync()
         {
-            var url = $"{_apiUrl}/state-categories";
+            var groupId = _sessionRepository.GroupId;
+            var list = await FetchStateCategoriesAsync(groupId);
+
+            if ((list is null || list.Count == 0) && groupId is not null)
+            {
+                _logger.LogInformation("[API] Catálogo de categorías vacío para group_id={GroupId}, usando catálogo default", groupId);
+                list = await FetchStateCategoriesAsync(null);
+            }
+
+            return list;
+        }
+
+        private async Task<List<StateCategoryCatalogItem>?> FetchStateCategoriesAsync(int? groupId)
+        {
+            var url = groupId is null ? $"{_apiUrl}/state-categories" : $"{_apiUrl}/state-categories?group_id={groupId}";
             _logger.LogDebug("[API] GET {Url}", url);
             try
             {
@@ -227,7 +258,21 @@ namespace ActiMetrics.Service.Services
 
         public async Task<List<StateCatalogItem>?> GetStatesAsync()
         {
-            var url = $"{_apiUrl}/states";
+            var groupId = _sessionRepository.GroupId;
+            var list = await FetchStatesAsync(groupId);
+
+            if ((list is null || list.Count == 0) && groupId is not null)
+            {
+                _logger.LogInformation("[API] Catálogo de estados vacío para group_id={GroupId}, usando catálogo default", groupId);
+                list = await FetchStatesAsync(null);
+            }
+
+            return list;
+        }
+
+        private async Task<List<StateCatalogItem>?> FetchStatesAsync(int? groupId)
+        {
+            var url = groupId is null ? $"{_apiUrl}/states" : $"{_apiUrl}/states?group_id={groupId}";
             _logger.LogDebug("[API] GET {Url}", url);
             try
             {

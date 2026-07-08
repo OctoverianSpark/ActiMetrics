@@ -261,7 +261,7 @@ namespace ActiMetrics.Service.Services
         {
             _logger.LogInformation("[WS] UserInfo recibido: role={Role}, group={Group}, absence_status={AbsenceStatus}",
                 m.Role, m.Group, m.Absence_Status);
-            _session.SetUserInfo(m.Appuser_Id, m.Full_Name, m.Role, m.Group, m.Absence_Status, m.Access_Level);
+            _session.SetUserInfo(m.Appuser_Id, m.Full_Name, m.Role, m.Group, m.Group_Id, m.Absence_Status, m.Access_Level);
             return Task.CompletedTask;
         }
 

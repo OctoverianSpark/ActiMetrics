@@ -40,7 +40,13 @@ namespace ActiMetrics.UI.Tray
 
             _timerService.SetTrayService(this);
             _websocketService.OnNotification += OnNotification;
+            _syncService.StateCatalogRefreshed += OnStateCatalogRefreshed;
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        }
+
+        private void OnStateCatalogRefreshed()
+        {
+            _uiContext.Post(_ => RebuildStateItems(), null);
         }
 
         private void OnNotification((string Title, string Text) tuple)
@@ -74,10 +80,104 @@ namespace ActiMetrics.UI.Tray
         }
 
         private readonly Dictionary<WorkState, ToolStripMenuItem> _stateItems = new();
+        private const int FixedTrailingMenuItems = 2; // separador + "Crear Ticket"
+        private WorkState _lastActiveState = WorkState.Working;
+
+        private static readonly Dictionary<string, string> _categoryEmojis = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["active"] = "🟢",
+            ["neutral"] = "🟢",
+            ["inactive"] = "🔴",
+        };
 
         private ContextMenuStrip BuildMenu()
         {
             var menu = new ContextMenuStrip();
+            PopulateStateItems(menu);
+
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
+
+            UpdateMenuCheck(_lastActiveState);
+            return menu;
+        }
+
+        private void RebuildStateItems()
+        {
+            while (_menu.Items.Count > FixedTrailingMenuItems)
+            {
+                var item = _menu.Items[0];
+                _menu.Items.RemoveAt(0);
+                item.Dispose();
+            }
+
+            _stateItems.Clear();
+            PopulateStateItems(_menu, insertAt: 0);
+            UpdateMenuCheck(_lastActiveState);
+        }
+
+        private void PopulateStateItems(ContextMenuStrip menu, int insertAt = -1)
+        {
+            var states = _syncService.States.Where(s => s.Show_In_Menu).ToList();
+            var groups = states.Count > 0
+                ? BuildCatalogGroups(states)
+                : BuildFallbackGroups();
+
+            var index = insertAt;
+            foreach (var categoryItem in groups)
+            {
+                if (index < 0) menu.Items.Add(categoryItem);
+                else menu.Items.Insert(index++, categoryItem);
+            }
+        }
+
+        private List<ToolStripMenuItem> BuildCatalogGroups(List<StateCatalogItem> visibleStates)
+        {
+            var categoriesById = _syncService.StateCategories.ToDictionary(c => c.Id);
+            var ordered = visibleStates
+                .OrderBy(s => categoriesById.TryGetValue(s.Category_Id, out var c) ? c.Sort_Order : int.MaxValue)
+                .ThenBy(s => s.Sort_Order);
+
+            var result = new List<ToolStripMenuItem>();
+            foreach (var group in ordered.GroupBy(s => s.Category_Id))
+            {
+                categoriesById.TryGetValue(group.Key, out var categoryInfo);
+                var categoryItem = new ToolStripMenuItem(FormatCategoryLabel(categoryInfo));
+
+                foreach (var stateItem in group)
+                {
+                    if (!Enum.IsDefined(typeof(WorkState), stateItem.Code))
+                        continue; // estado sin equivalente local soportado aún
+
+                    var capturedState = (WorkState)stateItem.Code;
+                    var item = new ToolStripMenuItem(stateItem.Name);
+                    item.Click += async (s, e) =>
+                    {
+                        await _timerService.SetStateAsync(capturedState);
+                        UpdateMenuCheck(capturedState);
+                    };
+                    _stateItems[capturedState] = item;
+                    categoryItem.DropDownItems.Add(item);
+                }
+
+                if (categoryItem.DropDownItems.Count > 0)
+                    result.Add(categoryItem);
+                else
+                    categoryItem.Dispose();
+            }
+
+            return result;
+        }
+
+        private static string FormatCategoryLabel(StateCategoryCatalogItem? category)
+        {
+            if (category is null) return "Otros";
+            var emoji = _categoryEmojis.TryGetValue(category.Key, out var e) ? e + " " : string.Empty;
+            return emoji + category.Name;
+        }
+
+        private List<ToolStripMenuItem> BuildFallbackGroups()
+        {
             var categoryLabels = new Dictionary<StateCategory, string>
             {
                 { StateCategory.Active,   "🟢 Activo"   },
@@ -91,6 +191,7 @@ namespace ActiMetrics.UI.Tray
                 .Where(x => x.info is not null)
                 .GroupBy(x => x.info!.Category);
 
+            var result = new List<ToolStripMenuItem>();
             foreach (var group in grouped)
             {
                 var categoryItem = new ToolStripMenuItem(categoryLabels[group.Key]);
@@ -106,15 +207,10 @@ namespace ActiMetrics.UI.Tray
                     _stateItems[state] = item;
                     categoryItem.DropDownItems.Add(item);
                 }
-                menu.Items.Add(categoryItem);
+                result.Add(categoryItem);
             }
 
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
-            menu.Items.Add(new ToolStripMenuItem("Reportar", null, (s, e) => OpenReportForm()));
-
-            UpdateMenuCheck(WorkState.Working);
-            return menu;
+            return result;
         }
 
         public void OpenTicketForm()
@@ -123,14 +219,9 @@ namespace ActiMetrics.UI.Tray
             ticketForm.Show();
         }
 
-        public void OpenReportForm()
-        {
-            var reportForm = new Report(_syncService);
-            reportForm.Show();
-        }
-
         public void UpdateMenuCheck(WorkState activeState)
         {
+            _lastActiveState = activeState;
             foreach (var (state, item) in _stateItems)
                 item.Checked = state == activeState;
         }
@@ -156,6 +247,7 @@ namespace ActiMetrics.UI.Tray
         {
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             _websocketService.OnNotification -= OnNotification;
+            _syncService.StateCatalogRefreshed -= OnStateCatalogRefreshed;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _menu.Dispose();

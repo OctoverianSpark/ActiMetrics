@@ -73,6 +73,7 @@ namespace ActiMetrics.Shared.Models
         public string? Role { get; set; }
         public JsonElement? Access_Level { get; set; }
         public string? Group { get; set; }
+        public int? Group_Id { get; set; }
         public string? Absence_Status { get; set; }
     }
 }

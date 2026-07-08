@@ -6,27 +6,28 @@ using ActiMetrics.Shared.Models;
 
 namespace ActiMetrics.Shared.Models
 {
+    // Los valores numéricos deben coincidir con el campo "code" que devuelve /states.
     public enum WorkState
     {
         [StateInfoAttribute("Trabajando", StateCategory.Active)]
-        Working,
+        Working = 0,
 
         [StateInfoAttribute("Horas Extras", StateCategory.Active)]
-        Overtime,
+        Overtime = 1,
 
         [StateInfoAttribute("Break", StateCategory.Neutral)]
-        Break,
+        Break = 2,
 
         [StateInfoAttribute("Baño", StateCategory.Neutral)]
-        WC,
+        WC = 3,
 
         [StateInfoAttribute("Almuerzo", StateCategory.Neutral)]
-        Lunch,
-
+        Lunch = 4,
 
         [StateInfoAttribute("Idle", StateCategory.Inactive)]
-        Idle,
+        Idle = 5,
+
         [StateInfoAttribute("Fuera de linea", StateCategory.Inactive)]
-        Offline
+        Offline = 6
     }
 }
