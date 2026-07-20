@@ -33,15 +33,21 @@ namespace ActiMetrics.UI.Tray
             _notifyIcon = new NotifyIcon
             {
                 Icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application,
-                Visible = true,
+                Visible = !ShouldHideTray(),
                 Text = "Go Tracer",
                 ContextMenuStrip = _menu
             };
 
             _timerService.SetTrayService(this);
             _websocketService.OnNotification += OnNotification;
+            _websocketService.OnUserInfoUpdated += OnUserInfoUpdated;
             _syncService.StateCatalogRefreshed += OnStateCatalogRefreshed;
             SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        }
+
+        private void OnUserInfoUpdated()
+        {
+            _uiContext.Post(_ => UpdateTicketVisibility(), null);
         }
 
         private void OnStateCatalogRefreshed()
@@ -90,16 +96,32 @@ namespace ActiMetrics.UI.Tray
             ["inactive"] = "🔴",
         };
 
+        private ToolStripSeparator? _ticketSeparator;
+        private ToolStripMenuItem? _ticketMenuItem;
+
         private ContextMenuStrip BuildMenu()
         {
             var menu = new ContextMenuStrip();
             PopulateStateItems(menu);
 
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm()));
+            _ticketSeparator = new ToolStripSeparator();
+            _ticketMenuItem = new ToolStripMenuItem("Crear Ticket", null, (s, e) => OpenTicketForm());
+            menu.Items.Add(_ticketSeparator);
+            menu.Items.Add(_ticketMenuItem);
+            UpdateTicketVisibility();
 
             UpdateMenuCheck(_lastActiveState);
             return menu;
+        }
+
+        // Controlado por el permiso create_tickets del rol (access_level, vía WS UserInfo) — se
+        // reevalúa en cada UserInfo (rol/permiso puede cambiar sin reiniciar el agente), no solo
+        // al refrescar el catálogo de estados.
+        private void UpdateTicketVisibility()
+        {
+            var canCreate = _syncService.CanCreateTickets;
+            if (_ticketSeparator is not null) _ticketSeparator.Visible = canCreate;
+            if (_ticketMenuItem is not null) _ticketMenuItem.Visible = canCreate;
         }
 
         private void RebuildStateItems()
@@ -114,11 +136,18 @@ namespace ActiMetrics.UI.Tray
             _stateItems.Clear();
             PopulateStateItems(_menu, insertAt: 0);
             UpdateMenuCheck(_lastActiveState);
+            _notifyIcon.Visible = !ShouldHideTray();
         }
+
+        // Visible salvo que su code esté oculto para el grupo actual (HiddenStateCodes, de
+        // /group-state-visibility) — la visibilidad ya no tiene una capa global (show_in_menu
+        // se eliminó del catálogo, group_state_visibility es la única fuente de verdad).
+        private bool IsVisible(StateCatalogItem s) =>
+            !_syncService.HiddenStateCodes.Contains(s.Code);
 
         private void PopulateStateItems(ContextMenuStrip menu, int insertAt = -1)
         {
-            var states = _syncService.States.Where(s => s.Show_In_Menu).ToList();
+            var states = _syncService.States.Where(IsVisible).ToList();
             var groups = states.Count > 0
                 ? BuildCatalogGroups(states)
                 : BuildFallbackGroups();
@@ -129,6 +158,15 @@ namespace ActiMetrics.UI.Tray
                 if (index < 0) menu.Items.Add(categoryItem);
                 else menu.Items.Insert(index++, categoryItem);
             }
+        }
+
+        // El catálogo llegó (States no está vacío) pero ningún estado queda visible
+        // tras aplicar HiddenStateCodes: no hay nada que mostrar, así que se oculta
+        // el ícono del tray por completo.
+        private bool ShouldHideTray()
+        {
+            var states = _syncService.States;
+            return states.Count > 0 && !states.Any(IsVisible);
         }
 
         private List<ToolStripMenuItem> BuildCatalogGroups(List<StateCatalogItem> visibleStates)
@@ -247,6 +285,7 @@ namespace ActiMetrics.UI.Tray
         {
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             _websocketService.OnNotification -= OnNotification;
+            _websocketService.OnUserInfoUpdated -= OnUserInfoUpdated;
             _syncService.StateCatalogRefreshed -= OnStateCatalogRefreshed;
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();

@@ -14,6 +14,7 @@ namespace ActiMetrics.Service.Services
     {
         private readonly TokenService _tokenService;
         private readonly Session _session;
+        private readonly SyncService _syncService;
         private readonly ILogger<WebSocketService> _logger;
         private ClientWebSocket _client = new();
 
@@ -26,14 +27,16 @@ namespace ActiMetrics.Service.Services
 
         public event Action<(string Title, string Text)>? OnNotification;
         public event Action? OnRestart;
+        public event Action? OnUserInfoUpdated;
 
         private CancellationTokenSource? _sessionCts;
         private DateTime _lastReconnectTrigger = DateTime.MinValue;
 
-        public WebSocketService(TokenService tokenService, Session session, ILogger<WebSocketService> logger)
+        public WebSocketService(TokenService tokenService, Session session, SyncService syncService, ILogger<WebSocketService> logger)
         {
             _tokenService = tokenService;
             _session = session;
+            _syncService = syncService;
             _logger = logger;
         }
 
@@ -245,24 +248,32 @@ namespace ActiMetrics.Service.Services
                 WsActionType.Restart => Task.Run(() => Process.Start("shutdown", "/r /t 0")),
                 WsActionType.Shutdown => Task.Run(() => Process.Start("shutdown", "/s /t 0")),
                 WsActionType.Logoff => Task.Run(() => Process.Start("shutdown", "/l")),
-                WsActionType.Sync => SyncAsync(),
+                WsActionType.Sync => HandleSyncActionAsync(),
                 WsActionType.RestartApp => Task.Run(() => OnRestart?.Invoke()),
                 _ => Task.CompletedTask
             });
         }
 
-        private Task SyncAsync()
+        private async Task HandleSyncActionAsync()
         {
             _logger.LogInformation("[WS] Sync solicitado por servidor");
-            return Task.CompletedTask;
+            await _syncService.SyncAsync();
         }
 
-        private Task HandleUserInfoAsync(WsUserInfoMessage m)
+        private async Task HandleUserInfoAsync(WsUserInfoMessage m)
         {
             _logger.LogInformation("[WS] UserInfo recibido: role={Role}, group={Group}, absence_status={AbsenceStatus}",
                 m.Role, m.Group, m.Absence_Status);
-            _session.SetUserInfo(m.Appuser_Id, m.Full_Name, m.Role, m.Group, m.Group_Id, m.Absence_Status, m.Access_Level);
-            return Task.CompletedTask;
+
+            var previousGroupId = _session.GroupId;
+            _session.SetUserInfo(m.Appuser_Id, m.Full_Name, m.Role, m.Group, m.Group_Id, m.Absence_Status, m.Access_Level, m.Preferences);
+            OnUserInfoUpdated?.Invoke();
+
+            if (previousGroupId != m.Group_Id)
+            {
+                _logger.LogInformation("[WS] group_id cambió ({Old} → {New}), recalculando catálogo de estados", previousGroupId, m.Group_Id);
+                await _syncService.RefreshStateCatalogAsync();
+            }
         }
 
         private Task HandleNotificationAsync(WsNotificationMessage m)

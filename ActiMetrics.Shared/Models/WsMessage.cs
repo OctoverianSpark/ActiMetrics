@@ -75,5 +75,9 @@ namespace ActiMetrics.Shared.Models
         public string? Group { get; set; }
         public int? Group_Id { get; set; }
         public string? Absence_Status { get; set; }
+        // Preferencias generales del agente por grupo (ver AgentPreferences en tracer-ingestor),
+        // ej. auto_shutdown_enabled. JSON libre igual que Access_Level: una clave ausente se
+        // trata como "en default" en vez de reventar si el backend agrega una preferencia nueva.
+        public JsonElement? Preferences { get; set; }
     }
 }

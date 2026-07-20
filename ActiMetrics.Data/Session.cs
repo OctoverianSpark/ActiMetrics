@@ -13,6 +13,23 @@ public class Session
     public int? GroupId { get; private set; }
     public string? AbsenceStatus { get; private set; }
     public JsonElement? AccessLevel { get; private set; }
+    public JsonElement? Preferences { get; private set; }
+
+    // access_level es un JSON libre por rol (ver PERMISSION_GROUPS en tracer-dashboard). Ausencia
+    // de la clave se trata como false, igual que en el middleware del dashboard — no hay un
+    // "default true" a nivel de lectura, solo al crear un rol nuevo desde el formulario.
+    public bool CanCreateTickets =>
+        AccessLevel is { } level &&
+        level.TryGetProperty("create_tickets", out var prop) &&
+        prop.ValueKind == JsonValueKind.True;
+
+    // preferences es un JSON libre por grupo (ver AgentPreferences en tracer-ingestor). Ausencia
+    // de la clave (grupo sin configurar, o preferencia agregada en una versión de agente vieja)
+    // se trata como false — el apagado automático es opt-in por grupo, nunca el default.
+    public bool AutoShutdownEnabled =>
+        Preferences is { } prefs &&
+        prefs.TryGetProperty("auto_shutdown_enabled", out var prop) &&
+        prop.ValueKind == JsonValueKind.True;
 
     public Session()
     {
@@ -54,7 +71,7 @@ public class Session
         File.WriteAllText(_file, string.Empty);
     }
 
-    public void SetUserInfo(string? appuserId, string? fullName, string? role, string? group, int? groupId, string? absenceStatus, JsonElement? accessLevel)
+    public void SetUserInfo(string? appuserId, string? fullName, string? role, string? group, int? groupId, string? absenceStatus, JsonElement? accessLevel, JsonElement? preferences)
     {
         AppuserId = appuserId;
         FullName = fullName;
@@ -63,6 +80,7 @@ public class Session
         GroupId = groupId;
         AbsenceStatus = absenceStatus;
         AccessLevel = accessLevel;
+        Preferences = preferences;
         Console.WriteLine($"[SESSION]: UserInfo actualizado → role={role}, group={group} (id={groupId}), absence_status={absenceStatus}");
     }
 }

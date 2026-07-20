@@ -13,6 +13,7 @@ namespace ActiMetrics.Service.Services
         private readonly StateRepository _repository;
         private readonly ActivityService _activityService;
         private readonly SyncService _syncService;
+        private readonly Session _session;
         private readonly string _workerId;
         private readonly string _workerUserName;
         private ITrayService? _trayService;
@@ -57,11 +58,12 @@ namespace ActiMetrics.Service.Services
             _trayService = trayService;
         }
 
-        public TimerService(StateRepository repository, ActivityService activityService, SyncService syncService)
+        public TimerService(StateRepository repository, ActivityService activityService, SyncService syncService, Session session)
         {
             _repository = repository;
             _activityService = activityService;
             _syncService = syncService;
+            _session = session;
             _workerId = Environment.MachineName;
             _workerUserName = GetActualUserName();
         }
@@ -187,7 +189,12 @@ namespace ActiMetrics.Service.Services
             if (ahora >= endDay && !_endDayReachedNotified)
             {
                 _endDayReachedNotified = true;
-                if (IsRemoteSession())
+                if (!_session.AutoShutdownEnabled)
+                {
+                    _trayService?.Notify(("🔴 Jornada finalizada", "Recuerda registrar tu salida."));
+                    Console.WriteLine("[Tracer] Jornada finalizada (apagado automático no habilitado para este grupo).");
+                }
+                else if (IsRemoteSession())
                 {
                     _trayService?.Notify(("🔴 Jornada finalizada", "Sesión remota detectada — el equipo no se apagará automáticamente."));
                     Console.WriteLine("[Tracer] Jornada finalizada (sesión RDP — apagado automático desactivado).");

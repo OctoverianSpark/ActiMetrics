@@ -204,7 +204,9 @@ namespace ActiMetrics.Service.Services
 
         public IReadOnlyList<StateCategoryCatalogItem> StateCategories { get; private set; } = Array.Empty<StateCategoryCatalogItem>();
         public IReadOnlyList<StateCatalogItem> States { get; private set; } = Array.Empty<StateCatalogItem>();
+        public IReadOnlySet<int> HiddenStateCodes { get; private set; } = new HashSet<int>();
         public event Action? StateCatalogRefreshed;
+        public bool CanCreateTickets => _sessionRepository.CanCreateTickets;
 
         public async Task RefreshStateCatalogAsync()
         {
@@ -214,27 +216,24 @@ namespace ActiMetrics.Service.Services
             var states = await GetStatesAsync();
             if (states is not null) States = states;
 
+            var groupId = _sessionRepository.GroupId;
+            if (groupId is not null)
+            {
+                var hidden = await GetGroupStateVisibilityAsync(groupId.Value);
+                if (hidden is not null) HiddenStateCodes = hidden.Select(h => h.Code).ToHashSet();
+            }
+            else
+            {
+                HiddenStateCodes = new HashSet<int>();
+            }
+
             if (categories is not null || states is not null)
                 StateCatalogRefreshed?.Invoke();
         }
 
         public async Task<List<StateCategoryCatalogItem>?> GetStateCategoriesAsync()
         {
-            var groupId = _sessionRepository.GroupId;
-            var list = await FetchStateCategoriesAsync(groupId);
-
-            if ((list is null || list.Count == 0) && groupId is not null)
-            {
-                _logger.LogInformation("[API] Catálogo de categorías vacío para group_id={GroupId}, usando catálogo default", groupId);
-                list = await FetchStateCategoriesAsync(null);
-            }
-
-            return list;
-        }
-
-        private async Task<List<StateCategoryCatalogItem>?> FetchStateCategoriesAsync(int? groupId)
-        {
-            var url = groupId is null ? $"{_apiUrl}/state-categories" : $"{_apiUrl}/state-categories?group_id={groupId}";
+            var url = $"{_apiUrl}/state-categories";
             _logger.LogDebug("[API] GET {Url}", url);
             try
             {
@@ -258,21 +257,7 @@ namespace ActiMetrics.Service.Services
 
         public async Task<List<StateCatalogItem>?> GetStatesAsync()
         {
-            var groupId = _sessionRepository.GroupId;
-            var list = await FetchStatesAsync(groupId);
-
-            if ((list is null || list.Count == 0) && groupId is not null)
-            {
-                _logger.LogInformation("[API] Catálogo de estados vacío para group_id={GroupId}, usando catálogo default", groupId);
-                list = await FetchStatesAsync(null);
-            }
-
-            return list;
-        }
-
-        private async Task<List<StateCatalogItem>?> FetchStatesAsync(int? groupId)
-        {
-            var url = groupId is null ? $"{_apiUrl}/states" : $"{_apiUrl}/states?group_id={groupId}";
+            var url = $"{_apiUrl}/states";
             _logger.LogDebug("[API] GET {Url}", url);
             try
             {
@@ -290,6 +275,30 @@ namespace ActiMetrics.Service.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "[API] No se pudo consultar el catálogo de estados");
+                return null;
+            }
+        }
+
+        public async Task<List<GroupStateVisibilityItem>?> GetGroupStateVisibilityAsync(int groupId)
+        {
+            var url = $"{_apiUrl}/group-state-visibility?group_id={groupId}";
+            _logger.LogDebug("[API] GET {Url}", url);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
+
+                if (!res.IsSuccessStatusCode) return null;
+
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<List<GroupStateVisibilityItem>>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar la visibilidad de estados del grupo");
                 return null;
             }
         }

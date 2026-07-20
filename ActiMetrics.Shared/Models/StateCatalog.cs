@@ -15,7 +15,13 @@ namespace ActiMetrics.Shared.Models
         public string Name { get; set; } = string.Empty;
         public int Category_Id { get; set; }
         public int Sort_Order { get; set; }
-        public bool Show_In_Menu { get; set; }
         public StateCategoryCatalogItem? Category { get; set; }
+    }
+
+    public class GroupStateVisibilityItem
+    {
+        public int Id { get; set; }
+        public int Group_Id { get; set; }
+        public int Code { get; set; }
     }
 }
