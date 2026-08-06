@@ -71,6 +71,19 @@ namespace ActiMetrics.Data
                     FilePath TEXT NOT NULL,
                     Synced INTEGER NOT NULL DEFAULT 0);
             ");
+            // Encola tickets localmente antes de intentar enviarlos — si el webhook de creación
+            // falla (caído, sin internet), el ticket queda acá con Synced=0 en vez de perderse, y
+            // SyncService lo reintenta en cada tick de SyncWorker igual que StateLog/AppUsageLog.
+            conn.Execute(@"
+                CREATE TABLE IF NOT EXISTS Tickets (
+                    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Category    TEXT    NOT NULL,
+                    Description TEXT    NOT NULL,
+                    Usuario     TEXT    NOT NULL,
+                    CreatedAt   TEXT    NOT NULL,
+                    Synced      INTEGER NOT NULL DEFAULT 0
+                );
+            ");
 
 
         }

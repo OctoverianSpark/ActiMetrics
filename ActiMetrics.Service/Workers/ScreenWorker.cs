@@ -29,41 +29,51 @@ namespace ActiMetrics.Service.Workers
         {
             _inputTrackerService.Start();
 
-            var lastScreenshot = DateTime.MinValue;
-            var lastFlush      = DateTime.Now;
-
             try
             {
-                while (!stoppingToken.IsCancellationRequested)
-                {
-                    var now = DateTime.Now;
-
-                    _appTrackerService.Tick();
-                    _inputTrackerService.Tick();
-
-                    if (now - lastFlush >= FlushInterval)
-                    {
-                        var (active, idle, clicks, keys) = _inputTrackerService.GetAndResetCounts();
-                        await _appTrackerService.FlushIntervalAsync(active, idle, clicks, keys);
-                        lastFlush = now;
-                    }
-
-                    if (now - lastScreenshot >= ScreenshotInterval)
-                    {
-                        if (await _syncService.CheckTakeScreenshotsAsync())
-                        {
-                            await _screenshotService.TickAsync();
-                            await _syncService.SyncScreenshotAsync();
-                        }
-                        lastScreenshot = now;
-                    }
-
-                    await Task.Delay(1000, stoppingToken);
-                }
+                await Task.WhenAll(
+                    RunTrackingLoopAsync(stoppingToken),
+                    RunScreenshotLoopAsync(stoppingToken));
             }
             finally
             {
                 _inputTrackerService.Dispose();
+            }
+        }
+
+        private async Task RunTrackingLoopAsync(CancellationToken stoppingToken)
+        {
+            var lastFlush = DateTime.Now;
+
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var now = DateTime.Now;
+
+                _appTrackerService.Tick();
+                _inputTrackerService.Tick();
+
+                if (now - lastFlush >= FlushInterval)
+                {
+                    var (active, idle, clicks, keys) = _inputTrackerService.GetAndResetCounts();
+                    await _appTrackerService.FlushIntervalAsync(active, idle, clicks, keys);
+                    lastFlush = now;
+                }
+
+                await Task.Delay(1000, stoppingToken);
+            }
+        }
+
+        private async Task RunScreenshotLoopAsync(CancellationToken stoppingToken)
+        {
+            using var timer = new PeriodicTimer(ScreenshotInterval);
+
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                if (await _syncService.CheckTakeScreenshotsAsync())
+                {
+                    await _screenshotService.TickAsync();
+                    await _syncService.SyncScreenshotAsync();
+                }
             }
         }
     }

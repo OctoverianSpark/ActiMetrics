@@ -122,6 +122,7 @@ namespace ActiMetrics.UI
                         services.AddSingleton<StateRepository>();
                         services.AddSingleton<AppUsageRepository>();
                         services.AddSingleton<ScreenshotRepository>();
+                        services.AddSingleton<TicketRepository>();
 
                         // Services
                         services.AddSingleton<TokenService>();

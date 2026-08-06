@@ -122,7 +122,6 @@ namespace ActiMetrics.Service.Services
             {
                 Type = WsMessageType.SyncData,
                 Hostname = Environment.MachineName,
-                Ip = _tokenService.GetLocalIp(),
                 Username = Environment.UserName,
                 MachineBrand = brand,
                 MachineModel = model

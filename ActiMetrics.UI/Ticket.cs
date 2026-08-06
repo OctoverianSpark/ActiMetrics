@@ -216,30 +216,18 @@ public class Ticket : Form
 
         try
         {
-            var response = await _syncService.SaveTicketAsync(_categoriaSeleccionada, txtDescripcion.Text);
-            var json = await response.Content.ReadAsStringAsync();
-            if (response.IsSuccessStatusCode)
-            {
-                string message = json;
-                try
-                {
-                    var items = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(json);
-                    if (items?.Count > 0 && items[0].TryGetProperty("data", out var dataProp))
-                        message = dataProp.GetString() ?? json;
-                }
-                catch { }
-
-                MessageBox.Show(message, "Ticket", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                this.Close();
-                return;
-            }
-            else
-            {
-                MessageBox.Show($"Error {response.StatusCode}");
-            }
+            // SaveTicketAsync ya no lanza por un status no-2xx: el ticket queda encolado
+            // localmente y se reintenta solo aunque el envío en línea falle (ver SyncService).
+            var result = await _syncService.SaveTicketAsync(_categoriaSeleccionada, txtDescripcion.Text);
+            MessageBox.Show(result.Message, "Ticket", MessageBoxButtons.OK,
+                result.Sent ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            this.Close();
+            return;
         }
         catch (Exception ex)
         {
+            // Solo llega acá si algo falla ANTES de encolar (ej. no se pudo escribir en la BD
+            // local) — el envío en sí ya no propaga excepciones al llamador.
             MessageBox.Show($"Error al enviar: {ex.Message}");
         }
         finally

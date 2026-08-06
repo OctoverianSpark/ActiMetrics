@@ -8,11 +8,16 @@ using ActiMetrics.Shared.Models;
 
 namespace ActiMetrics.Service.Services
 {
+    // Resultado de intentar enviar un ticket — Sent=false no significa que se perdió: ya quedó
+    // encolado localmente (ver TicketRepository/SyncTicketsAsync) y se reintenta solo.
+    public record TicketSaveResult(bool Sent, string Message);
+
     public class SyncService
     {
         private readonly StateRepository _stateRepository;
         private readonly AppUsageRepository _appUsageRepository;
         private readonly ScreenshotRepository _screenshotRepository;
+        private readonly TicketRepository _ticketRepository;
         private readonly Session _sessionRepository;
         private readonly TokenService _tokenService;
         private readonly ILogger<SyncService> _logger;
@@ -21,6 +26,14 @@ namespace ActiMetrics.Service.Services
         private readonly string _ticketsUrl;
         private readonly string _workerId;
         private readonly string _workerUserName;
+
+        // Reintentos EN LÍNEA mientras el usuario espera en el diálogo (ademas del reintento en
+        // segundo plano de SyncTicketsAsync, que sigue solo cada tick de SyncWorker indefinidamente
+        // después de esto). Cortos a propósito: no tiene sentido tener el diálogo bloqueado con
+        // "Enviando…" por el backoff largo de WebSocketService (hasta 60s) para una acción
+        // interactiva — si estos 3 intentos rápidos no alcanzan, el ticket ya quedó encolado y el
+        // usuario puede cerrar el diálogo tranquilo.
+        private static readonly TimeSpan[] TicketRetryDelays = { TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4) };
 
         private static readonly JsonSerializerOptions _jsonOptions = new()
         {
@@ -31,6 +44,7 @@ namespace ActiMetrics.Service.Services
             StateRepository stateRepository,
             AppUsageRepository appUsageRepository,
             ScreenshotRepository screenshotRepository,
+            TicketRepository ticketRepository,
             Session sessionRepository,
             TokenService tokenService,
             ILogger<SyncService> logger)
@@ -38,6 +52,7 @@ namespace ActiMetrics.Service.Services
             _stateRepository = stateRepository;
             _appUsageRepository = appUsageRepository;
             _screenshotRepository = screenshotRepository;
+            _ticketRepository = ticketRepository;
             _sessionRepository = sessionRepository;
             _tokenService = tokenService;
             _logger = logger;
@@ -52,6 +67,7 @@ namespace ActiMetrics.Service.Services
         {
             await SyncStatesAsync();
             await SyncAppUsageAsync();
+            await SyncTicketsAsync();
             await RefreshStateCatalogAsync();
         }
 
@@ -137,29 +153,109 @@ namespace ActiMetrics.Service.Services
             }
         }
 
-        public async Task<HttpResponseMessage> SaveTicketAsync(string category, string description)
+        // Encola el ticket localmente ANTES de intentar enviarlo (nunca se pierde aunque el POST
+        // falle) y hace unos pocos reintentos rápidos mientras el usuario espera en el diálogo. Si
+        // ninguno pega, queda con Synced=0 y SyncTicketsAsync lo reintenta solo en cada tick de
+        // SyncWorker hasta que funcione — sin límite de tiempo, a diferencia de los reintentos en
+        // línea de acá.
+        public async Task<TicketSaveResult> SaveTicketAsync(string category, string description)
         {
-            string displayName = System.DirectoryServices.AccountManagement
-                                   .UserPrincipal.Current.DisplayName;
-            var data = new
-            {
-                categoria = category,
-                descripcion = description,
-                usuario = displayName
-            };
+            string displayName = GetDisplayName();
+            var ticketId = await _ticketRepository.InsertAsync(category, description, displayName);
 
-            var content = new StringContent(
-                JsonSerializer.Serialize(data),
-                Encoding.UTF8,
-                "application/json");
+            for (int attempt = 0; ; attempt++)
+            {
+                var (success, message) = await PostTicketAsync(category, description, displayName);
+                if (success)
+                {
+                    await _ticketRepository.MarkSyncedAsync(ticketId);
+                    return new TicketSaveResult(true, message);
+                }
+                if (attempt >= TicketRetryDelays.Length) break;
+                await Task.Delay(TicketRetryDelays[attempt]);
+            }
+
+            return new TicketSaveResult(false,
+                "No se pudo enviar en este momento. Quedó guardado y se reintentará automáticamente.");
+        }
+
+        // Prioridad: 1) Session.FullName, el full_name real del appuser tal como lo tiene la API
+        // (llega por el UserInfoMessage de WS al sincronizar, ver Session.SetUserInfo) — el nombre
+        // "correcto" de negocio, no depende de Windows/AD para nada. 2) UserPrincipal.Current, que
+        // requiere que el equipo esté unido a un dominio y pueda contactar un controlador de
+        // dominio — en un equipo de workgroup (o con el DC inalcanzable) lanza
+        // PrincipalServerDownException ("The server could not be contacted"); antes esto reventaba
+        // ANTES de encolar el ticket, saltándose por completo la garantía de "nunca se pierde".
+        // 3) Environment.UserName como último recurso si ninguno de los dos anteriores sirve.
+        private string GetDisplayName()
+        {
+            if (!string.IsNullOrWhiteSpace(_sessionRepository.FullName))
+                return _sessionRepository.FullName!;
+
+            try
+            {
+                return System.DirectoryServices.AccountManagement.UserPrincipal.Current.DisplayName
+                    ?? Environment.UserName;
+            }
+            catch
+            {
+                return Environment.UserName;
+            }
+        }
+
+        // Un ticket es un solo objeto por request (no un array como States/AppUsage), así que cada
+        // fila pendiente se reintenta con su propio POST, no en lote.
+        private async Task<(bool Success, string Message)> PostTicketAsync(string category, string description, string usuario)
+        {
+            var data = new { categoria = category, descripcion = description, usuario };
+            var content = new StringContent(JsonSerializer.Serialize(data), Encoding.UTF8, "application/json");
 
             _logger.LogInformation("[API] POST {Url} — Ticket: {Cat}", _ticketsUrl, category);
             var sw = Stopwatch.StartNew();
-            var response = await _httpClient.PostAsync(_ticketsUrl, content);
-            sw.Stop();
-            _logger.LogInformation("[API] Ticket → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
+            try
+            {
+                var response = await _httpClient.PostAsync(_ticketsUrl, content);
+                sw.Stop();
+                _logger.LogInformation("[API] Ticket → {Status} ({Ms}ms)", response.StatusCode, sw.ElapsedMilliseconds);
 
-            return response.EnsureSuccessStatusCode();
+                var json = await response.Content.ReadAsStringAsync();
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("[API] Ticket rechazado: {Status} — {Body}", response.StatusCode, json);
+                    return (false, $"Error {(int)response.StatusCode}");
+                }
+
+                string message = json;
+                try
+                {
+                    var items = JsonSerializer.Deserialize<List<JsonElement>>(json);
+                    if (items?.Count > 0 && items[0].TryGetProperty("data", out var dataProp))
+                        message = dataProp.GetString() ?? json;
+                }
+                catch { /* respuesta no tiene el shape esperado, se usa el body crudo */ }
+
+                return (true, message);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                _logger.LogError(ex, "[API] Excepción al enviar ticket");
+                return (false, ex.Message);
+            }
+        }
+
+        private async Task SyncTicketsAsync()
+        {
+            var pending = await _ticketRepository.GetUnsyncedAsync();
+            foreach (var t in pending)
+            {
+                var (success, _) = await PostTicketAsync(t.Category, t.Description, t.Usuario);
+                if (success)
+                {
+                    await _ticketRepository.MarkSyncedAsync(t.Id);
+                    _logger.LogInformation("[Sync] Ticket #{Id} enviado en reintento en segundo plano", t.Id);
+                }
+            }
         }
 
         public async Task<List<ReportType>?> GetReportTypesAsync()
@@ -378,9 +474,9 @@ namespace ActiMetrics.Service.Services
         public async Task<Programation?> GetTodayScheduleAsync()
         {
             var email = _sessionRepository.GetEmail() ?? string.Empty;
-            var today = GetToday();
+            var today = DateOnly.FromDateTime(DateTime.Now);
 
-            _logger.LogInformation("[API] Consultando programación del día {Day} para {Email}", today, email);
+            _logger.LogInformation("[API] Consultando programación efectiva del día {Day} para {Email}", today, email);
 
             var appuser = await GetAppuserByEmailAsync(email);
             if (appuser is null)
@@ -389,14 +485,7 @@ namespace ActiMetrics.Service.Services
                 return null;
             }
 
-            var schedule = await GetScheduleForDayAsync(appuser.Id, today);
-            if (schedule is null)
-            {
-                _logger.LogInformation("[Sync] Sin programación para el día {Day}", today);
-                return null;
-            }
-
-            return await GetProgramationAsync(schedule.Programation_Id);
+            return await GetEffectiveScheduleAsync(appuser.Id, today);
         }
 
         private async Task<AppUser?> GetAppuserByEmailAsync(string email)
@@ -423,49 +512,37 @@ namespace ActiMetrics.Service.Services
             }
         }
 
-        private async Task<Schedule?> GetScheduleForDayAsync(int userId, Days today)
+        // GET /schedules/effective resuelve en el backend (horario fijo O rotación, ver
+        // ScheduleService.getEffectiveSchedule) — reemplaza el fetch-todo-y-filtrar anterior
+        // (GET /schedules?appuser_id=, que el backend ignoraba por completo devolviendo la tabla
+        // ENTERA: cada agente terminaba quedándose con el horario de OTRA persona al azar —
+        // cualquiera que matcheara el día de la semana primero en esa lista sin filtrar — y
+        // programando su fin de jornada/apagado automático según ESE horario ajeno). Además esta
+        // ruta sí resuelve rotation_cycles, que el código anterior no consultaba en absoluto.
+        private async Task<Programation?> GetEffectiveScheduleAsync(int appuserId, DateOnly date)
         {
-            var url = $"{_apiUrl}/schedules?appuser_id={userId}";
+            var dateStr = date.ToString("yyyy-MM-dd");
+            var url = $"{_apiUrl}/schedules/effective?appuser_id={appuserId}&date={dateStr}";
             _logger.LogDebug("[API] GET {Url}", url);
-            var sw = Stopwatch.StartNew();
-            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
-            sw.Stop();
-            _logger.LogInformation("[API] GetSchedule userId={Id} → {Status} ({Ms}ms)", userId, res.StatusCode, sw.ElapsedMilliseconds);
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
+                sw.Stop();
+                _logger.LogInformation("[API] GetEffectiveSchedule appuserId={Id} → {Status} ({Ms}ms)", appuserId, res.StatusCode, sw.ElapsedMilliseconds);
 
-            if (!res.IsSuccessStatusCode) return null;
+                if (res.StatusCode == System.Net.HttpStatusCode.NoContent) return null; // sin horario ese día
+                if (!res.IsSuccessStatusCode) return null;
 
-            var json = await res.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            var schedules = JsonSerializer.Deserialize<List<Schedule>>(json, _jsonOptions);
-            return schedules?.FirstOrDefault(s => s.Day_Of_Week == today);
+                var json = await res.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+                return JsonSerializer.Deserialize<Programation>(json, _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[API] No se pudo consultar la programación efectiva para appuserId={Id}", appuserId);
+                return null;
+            }
         }
-
-        private async Task<Programation?> GetProgramationAsync(int programationId)
-        {
-            var url = $"{_apiUrl}/programations/{programationId}";
-            _logger.LogDebug("[API] GET {Url}", url);
-            var sw = Stopwatch.StartNew();
-            var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
-            sw.Stop();
-            _logger.LogInformation("[API] GetProgramation id={Id} → {Status} ({Ms}ms)", programationId, res.StatusCode, sw.ElapsedMilliseconds);
-
-            if (!res.IsSuccessStatusCode) return null;
-
-            var json = await res.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            return JsonSerializer.Deserialize<Programation>(json, _jsonOptions);
-        }
-
-        private static Days GetToday() => DateTime.Now.DayOfWeek switch
-        {
-            DayOfWeek.Monday => Days.L,
-            DayOfWeek.Tuesday => Days.M,
-            DayOfWeek.Wednesday => Days.X,
-            DayOfWeek.Thursday => Days.J,
-            DayOfWeek.Friday => Days.V,
-            DayOfWeek.Saturday => Days.S,
-            DayOfWeek.Sunday => Days.D,
-            _ => throw new ArgumentOutOfRangeException()
-        };
     }
 }

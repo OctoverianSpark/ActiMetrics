@@ -58,7 +58,6 @@ namespace ActiMetrics.Shared.Models
     public class WsSyncDataMessage : WsMessage
     {
         public string? Hostname { get; set; }
-        public string? Ip { get; set; }
         public string? Username { get; set; }
         public string? MachineBrand { get; set; }
         public string? MachineModel { get; set; }

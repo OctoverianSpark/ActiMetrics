@@ -18,8 +18,10 @@ public class Session
     // access_level es un JSON libre por rol (ver PERMISSION_GROUPS en tracer-dashboard). Ausencia
     // de la clave se trata como false, igual que en el middleware del dashboard — no hay un
     // "default true" a nivel de lectura, solo al crear un rol nuevo desde el formulario.
+    // TryGetProperty lanza InvalidOperationException si el elemento no es un objeto (p. ej. el
+    // backend manda null o un string), por eso se valida ValueKind antes de leerlo.
     public bool CanCreateTickets =>
-        AccessLevel is { } level &&
+        AccessLevel is { ValueKind: JsonValueKind.Object } level &&
         level.TryGetProperty("create_tickets", out var prop) &&
         prop.ValueKind == JsonValueKind.True;
 
@@ -27,7 +29,7 @@ public class Session
     // de la clave (grupo sin configurar, o preferencia agregada en una versión de agente vieja)
     // se trata como false — el apagado automático es opt-in por grupo, nunca el default.
     public bool AutoShutdownEnabled =>
-        Preferences is { } prefs &&
+        Preferences is { ValueKind: JsonValueKind.Object } prefs &&
         prefs.TryGetProperty("auto_shutdown_enabled", out var prop) &&
         prop.ValueKind == JsonValueKind.True;
 

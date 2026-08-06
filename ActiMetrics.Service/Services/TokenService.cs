@@ -44,7 +44,6 @@ namespace ActiMetrics.Service.Services
                 new Claim("machineModel",  model),
                 new Claim("userName",      Environment.UserName),
                 new Claim("displayName",   GetDisplayName()),
-                new Claim("localIp",       localIp),
                 new Claim("isRdp",         isRdp ? "true" : "false"),
             };
 
