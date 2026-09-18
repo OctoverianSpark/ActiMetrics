@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using ActiMetrics.Data;
 using ActiMetrics.Shared;
 using ActiMetrics.Shared.Models;
@@ -32,11 +31,6 @@ namespace ActiMetrics.Service.Services
 
         [DllImport("kernel32.dll")]
         private static extern uint WTSGetActiveConsoleSessionId();
-
-        [DllImport("user32.dll")]
-        private static extern int GetSystemMetrics(int nIndex);
-
-        private static bool IsRemoteSession() => GetSystemMetrics(0x1000) != 0; // SM_REMOTESESSION
 
         private static string GetActualUserName()
         {
@@ -132,10 +126,7 @@ namespace ActiMetrics.Service.Services
         }
         private bool _endDayFiveMinNotified = false;
         private bool _endDayReachedNotified = false;
-        private bool _shutdownFiveMinNotified = false;
-        private bool _shutdownMinuteNotified = false;
         private bool _isOvertimeConfirmed = false;
-        private DateTime? _shutdownAt = null;
 
         private bool _lunchSoonNotified = false;
         private Task CheckLunchSoonWarningAsync()
@@ -162,17 +153,19 @@ namespace ActiMetrics.Service.Services
             return Task.CompletedTask;
         }
 
-        private async Task CheckEndDayAsync()
+        // Ya NO apaga el equipo al llegar la hora de salida — solo notifica. Antes, con
+        // auto_shutdown_enabled=true para el grupo, el agente ejecutaba `shutdown /s` 60 minutos
+        // después de programation.End_Day, lo que cortaba capturas/telemetría aunque la persona
+        // siguiera trabajando y no hubiera marcado 'Horas Extras' a tiempo. Ahora el equipo (y con
+        // él, las capturas) sigue funcionando indefinidamente después de la hora programada, hasta
+        // que alguien lo apague de verdad — _session.AutoShutdownEnabled queda sin efecto acá a
+        // propósito, no se borró el campo/preferencia por si se retoma más adelante.
+        private Task CheckEndDayAsync()
         {
-            if (_todayProgramation is null || string.IsNullOrEmpty(_todayProgramation.End_Day)) return;
+            if (_todayProgramation is null || string.IsNullOrEmpty(_todayProgramation.End_Day)) return Task.CompletedTask;
 
             if (_currentState == WorkState.Overtime || _currentState == WorkState.Offline)
-            {
-                _shutdownAt = null;
-                _shutdownFiveMinNotified = false;
-                _shutdownMinuteNotified  = false;
-                return;
-            }
+                return Task.CompletedTask;
 
             var ahora = TimeOnly.FromDateTime(DateTime.Now);
             var endDay = TimeOnly.ParseExact(_todayProgramation.End_Day, "HH:mm", null);
@@ -189,69 +182,11 @@ namespace ActiMetrics.Service.Services
             if (ahora >= endDay && !_endDayReachedNotified)
             {
                 _endDayReachedNotified = true;
-                if (!_session.AutoShutdownEnabled)
-                {
-                    _trayService?.Notify(("🔴 Jornada finalizada", "Recuerda registrar tu salida."));
-                    Console.WriteLine("[Tracer] Jornada finalizada (apagado automático no habilitado para este grupo).");
-                }
-                else if (IsRemoteSession())
-                {
-                    _trayService?.Notify(("🔴 Jornada finalizada", "Sesión remota detectada — el equipo no se apagará automáticamente."));
-                    Console.WriteLine("[Tracer] Jornada finalizada (sesión RDP — apagado automático desactivado).");
-                }
-                else
-                {
-                    _shutdownAt = DateTime.Now.AddMinutes(60);
-                    _trayService?.NotifyWithAction(
-                        ("🔴 Jornada finalizada", "El equipo se apagará en 1 hora. Selecciona 'Horas Extras' en el menú para cancelar."),
-                        "30 minutos más",
-                        () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
-                    Console.WriteLine("[Tracer] Jornada finalizada. Apagado programado en 60 min.");
-                }
+                _trayService?.Notify(("🔴 Jornada finalizada", "Recuerda registrar tu salida."));
+                Console.WriteLine("[Tracer] Jornada finalizada.");
             }
 
-            if (_shutdownAt is null) return;
-
-            var restante = _shutdownAt.Value - DateTime.Now;
-
-            if (restante.TotalMinutes <= 5 && restante.TotalSeconds > 0 && !_shutdownFiveMinNotified)
-            {
-                _shutdownFiveMinNotified = true;
-                _trayService?.NotifyWithAction(
-                    ("⏻ Apagado próximo", "El equipo se apagará en 5 minutos. Última oportunidad para marcar 'Horas Extras'."),
-                    "30 minutos más",
-                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
-                Console.WriteLine("[Tracer] Apagado en 5 minutos.");
-            }
-
-            if (restante.TotalMinutes <= 1 && restante.TotalSeconds > 0 && !_shutdownMinuteNotified)
-            {
-                _shutdownMinuteNotified = true;
-                _trayService?.NotifyWithAction(
-                    ("⏻ Apagado inminente", "El equipo se apagará en 1 minuto. Última oportunidad para marcar 'Horas Extras'."),
-                    "30 minutos más",
-                    () => { _shutdownAt = DateTime.Now.AddMinutes(30); _shutdownFiveMinNotified = false; _shutdownMinuteNotified = false; });
-                Console.WriteLine("[Tracer] Apagado en 1 minuto.");
-            }
-
-            if (DateTime.Now >= _shutdownAt.Value)
-            {
-                Console.WriteLine("[Tracer] Iniciando apagado del sistema.");
-                _shutdownAt = null;
-                await LogStateAsync(StateCategory.Inactive, WorkState.Offline, StateType.Auto);
-                try
-                {
-                    Process.Start(new ProcessStartInfo("shutdown", "/s /t 60 /c \"ActiMetrics: Jornada laboral finalizada.\"")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Tracer] Error al iniciar apagado: {ex.Message}");
-                }
-            }
+            return Task.CompletedTask;
         }
 
         private bool _lunchStartNotified = false;
@@ -307,17 +242,12 @@ namespace ActiMetrics.Service.Services
             if (state == WorkState.Overtime)
             {
                 _isOvertimeConfirmed = true;
-                _shutdownAt = null;
-                _shutdownFiveMinNotified = false;
-                _shutdownMinuteNotified  = false;
             }
             else if (_isOvertimeConfirmed)
             {
                 _isOvertimeConfirmed = false;
-                _endDayFiveMinNotified   = false;
-                _endDayReachedNotified   = false;
-                _shutdownFiveMinNotified = false;
-                _shutdownMinuteNotified  = false;
+                _endDayFiveMinNotified = false;
+                _endDayReachedNotified = false;
             }
             await LogStateAsync(category, state, StateType.Manual);
         }
