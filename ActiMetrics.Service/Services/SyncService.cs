@@ -71,32 +71,6 @@ namespace ActiMetrics.Service.Services
             await RefreshStateCatalogAsync();
         }
 
-        public async Task<bool> CheckTakeScreenshotsAsync()
-        {
-            var serial = _tokenService.GetMachineSerial();
-            var url = $"{_apiUrl}/tracer/permissions?serial={serial}";
-            try
-            {
-                var sw = Stopwatch.StartNew();
-                var res = await _httpClient.GetAsync(url).ConfigureAwait(false);
-                sw.Stop();
-                _logger.LogInformation("[API] GET {Url} → {Status} ({Ms}ms)", url, res.StatusCode, sw.ElapsedMilliseconds);
-
-                if (!res.IsSuccessStatusCode) return true;
-
-                var json = await res.Content.ReadAsStringAsync();
-                if (string.IsNullOrWhiteSpace(json)) return true;
-
-                var permissions = JsonSerializer.Deserialize<Permissions>(json, _jsonOptions);
-                return permissions?.Take_Screenshots ?? true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[API] No se pudo consultar permisos para serial {Serial} — se asume permitido", serial);
-                return true;
-            }
-        }
-
         public async Task SyncScreenshotAsync()
         {
             var screenshots = await _screenshotRepository.GetUnsyncedAsync();

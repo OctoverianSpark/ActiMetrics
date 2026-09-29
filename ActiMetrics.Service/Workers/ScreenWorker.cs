@@ -69,11 +69,8 @@ namespace ActiMetrics.Service.Workers
 
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                if (await _syncService.CheckTakeScreenshotsAsync())
-                {
-                    await _screenshotService.TickAsync();
-                    await _syncService.SyncScreenshotAsync();
-                }
+                await _screenshotService.TickAsync();
+                await _syncService.SyncScreenshotAsync();
             }
         }
     }
